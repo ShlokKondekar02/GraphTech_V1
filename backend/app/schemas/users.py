@@ -11,11 +11,12 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass
+    google_id: Optional[str] = None
 
 
 class UserResponse(UserBase):
     id: UUID
+    google_id: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
