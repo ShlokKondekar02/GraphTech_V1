@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # App Information
-    APP_NAME: str = "GraphTech DiagramGPT API"
+    APP_NAME: str = "GraphTech"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     HOST: str = "0.0.0.0"
@@ -15,14 +15,20 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/graphtech"
 
-    # Security
+    # Security / JWT
     SESSION_SECRET: str = "temporary-dev-session-secret-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
 
-    # AI Service Keys
+    # Frontend URL (for post-OAuth redirect)
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # AI Service Keys (Sprint 1+)
     VOYAGE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
