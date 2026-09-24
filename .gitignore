@@ -32,3 +32,7 @@ frontend/dist-ssr/
 *.njsproj
 *.sln
 *.sw?
+
+# Test databases
+*.db
+*.sqlite3
