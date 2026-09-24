@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { getSession, logout as apiLogout } from './api/client';
 import { Navbar } from './components/Navbar';
 import { CleanBackground } from './components/Background/CleanBackground';
 import { HistorySidebar } from './components/Sidebar/HistorySidebar';
@@ -36,25 +37,48 @@ export function App() {
   // Fullscreen Lightbox state (like ChatGPT image preview for seen or read)
   const [fullscreenDiagram, setFullscreenDiagram] = useState(null);
 
+  // ── Session bootstrap: check real backend session on every app load ─────────
+  const hydrateSession = useCallback(async () => {
+    try {
+      const user = await getSession();
+      if (user) {
+        setIsLoggedIn(true);
+        setCurrentUser(user);
+        setIsSidebarOpen(true);
+      } else {
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setIsSidebarOpen(false);
+      }
+    } catch (err) {
+      // Network error — treat as logged-out
+      console.error('Session check failed:', err);
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    // On mount (including hard refresh): hydrate auth state from the real session cookie.
+    hydrateSession();
+  }, [hydrateSession]);
+
   // Auth Handlers
   const handleOpenAuth = (mode = 'login') => {
     setAuthModal({ isOpen: true, mode });
   };
 
-  const handleLoginSuccess = (user) => {
-    setIsLoggedIn(true);
-    setCurrentUser(user);
-    setAuthModal({ isOpen: false, mode: 'login' });
-    // User requested: "only after login goes to discover page with left side bar like next page"
-    setIsInDiscoverMode(true);
-    setIsSidebarOpen(true);
-  };
-
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentUser(null);
-    setIsInDiscoverMode(true);
-    setIsSidebarOpen(false);
+  const handleLogout = async () => {
+    try {
+      await apiLogout();
+    } catch (err) {
+      console.error('Logout API call failed:', err);
+    } finally {
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      setIsInDiscoverMode(true);
+      setIsSidebarOpen(false);
+    }
   };
 
   // Handle normal message send (does NOT generate diagram automatically, strictly conversational chat!)
@@ -316,9 +340,7 @@ export function App() {
       {/* 5. Google Authentication Modal Pop-up */}
       <GoogleAuthModal
         isOpen={authModal.isOpen}
-        initialMode={authModal.mode}
         onClose={() => setAuthModal((prev) => ({ ...prev, isOpen: false }))}
-        onLoginSuccess={handleLoginSuccess}
       />
     </div>
   );
