@@ -81,9 +81,9 @@ export function Navbar({
         ) : (
           <div className="nav-user-profile-wrap">
             <div className="nav-user-pill" title={currentUser?.email || 'Logged In'}>
-              {currentUser?.avatar ? (
+              {currentUser?.avatar_url ? (
                 <img 
-                  src={currentUser.avatar} 
+                  src={currentUser.avatar_url} 
                   alt={currentUser.name} 
                   className="nav-user-avatar" 
                 />
