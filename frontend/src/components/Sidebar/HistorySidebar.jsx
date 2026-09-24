@@ -191,9 +191,9 @@ export function HistorySidebar({
       {/* Sidebar Footer */}
       <div className="sidebar-footer">
         <div className="sidebar-user-pill">
-          {currentUser?.avatar ? (
+          {currentUser?.avatar_url ? (
             <img 
-              src={currentUser.avatar} 
+              src={currentUser.avatar_url} 
               alt={currentUser.name} 
               style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} 
             />
