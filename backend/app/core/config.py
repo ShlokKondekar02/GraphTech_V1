@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
 
+    # Voyage AI settings (Sprint 1)
+    VOYAGE_MODEL: str = "voyage-3-large"
+    VOYAGE_TIMEOUT_SECONDS: float = 15.0
+    VOYAGE_MAX_RETRIES: int = 3
+
+    # Similarity search settings (Sprint 1)
+    SIMILARITY_THRESHOLD: float = 0.75  # cosine similarity threshold for reuse decision
+    SIMILARITY_TOP_K: int = 5           # number of candidates returned
+
+    # Feature flags (Sprint 1)
+    ENABLE_SPACY_PREPROCESSING: bool = False  # toggle spaCy pre-processing stage
+
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
