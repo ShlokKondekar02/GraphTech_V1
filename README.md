@@ -1,183 +1,221 @@
 # GraphTech_V1 — DiagramGPT
 
-AI-Assisted Technical Diagram Generation & Collaborative Architecture Studio.
+> AI-Assisted Technical Diagram Generation & Collaborative Architecture Studio
 
 ---
 
 ## 🌟 Overview
 
-**GraphTech_V1 (DiagramGPT)** transforms natural language architecture requirements and reference images into validated, high-fidelity technical architecture diagrams (Cloud VPC, Microservices, ERD, and State Machine Workflows) with interactive editing, real-time pipeline feedback, and dual-section studio workspaces.
+**GraphTech_V1 (DiagramGPT)** transforms natural language architecture requirements into validated, high-fidelity technical diagrams — Cloud VPC, Microservices, ERD, CI/CD pipelines, Kubernetes clusters, State Machines, and more.
 
-The project is structured as a **monorepo** comprising a modern **Vite + React 19 SPA** frontend and a robust **FastAPI + PostgreSQL (pgvector) + Alembic** backend.
+Built as a **monorepo** with a **Vite + React 19** frontend and a **FastAPI + PostgreSQL (pgvector) + Alembic** backend.
 
----
-
-## 🚀 Key Features & Studio Capabilities
-
-- **Discover Page & Google Authentication:** Sleek Google-style modal sign-in with instant OAuth session preservation and user isolation.
-- **Persistent History Sidebar:** Post-authentication sidebar with session history, search, and quick workspace navigation.
-- **Unified Dual-Section Studio:** Side-by-side synchronized chat stream and high-resolution diagram canvas with a seamless hairline resizer (Split, Canvas-only, and Chat-only view modes).
-- **6-Stage Visual AI Pipeline:** Progress feedback covering:
-  1. *Prompt Understanding & Extraction*
-  2. *Embedding & Similarity Search (Reuse Candidate)*
-  3. *Complexity Classification*
-  4. *Routing & Renderer Selection*
-  5. *Diagram Generation (DSL / Code)*
-  6. *Deterministic Structural & AST Validation*
-- **Interactive Diagram Controls:** Pan, zoom, reset, Mermaid/DSL code toggle, copy-to-clipboard, SVG export, and full-screen lightbox image viewer.
-- **Multi-Renderer Target Architecture:** Support for Mermaid CLI, PlantUML, Graphviz, and Schemdraw.
+The AI pipeline is a **reuse-first architecture**: every prompt is embedded with Voyage AI and searched against previously generated diagrams before invoking an LLM — keeping generation costs near-zero for common requests.
 
 ---
 
-## 📁 Monorepo Structure
+## 🚀 Sprint Progress
+
+| Sprint | Status | Focus |
+| :--- | :---: | :--- |
+| **Sprint 0** — Foundations | ✅ **Done** | FastAPI skeleton, Google OAuth, real Postgres + pgvector, session handling, Alembic migrations |
+| **Sprint 1** — Embeddings & Similarity Search | ✅ **Done** | Voyage AI embeddings, pgvector HNSW index, `/api/diagrams/prepare`, spaCy preprocessing, DB seed |
+| **Sprint 2** — Groq Generation & Validation | 🔜 Next | Groq structured JSON, Pydantic validation, complexity scoring |
+| **Sprint 3** — Renderer Selection | ⬜ Planned | Mermaid, PlantUML, Graphviz, Schemdraw compilers |
+| **Sprint 4** — Output Validation & Repair | ⬜ Planned | SVG reconciliation, auto-repair loop |
+| **Sprint 5** — Frontend Full Wiring | ⬜ Planned | Real SSE pipeline events, history UI, OAuth persistence |
+| **Sprint 6** — Gemini Path & Hardening | ⬜ Planned | Creative image path, rate limiting, circuit breakers |
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+User Prompt
+     │
+     ▼
+┌─────────────────────────────────────────┐
+│         POST /api/diagrams/prepare      │  ← Sprint 1 ✅
+│                                         │
+│  1. spaCy preprocessing (optional flag) │
+│  2. Voyage AI → 1024-dim embedding      │
+│  3. pgvector HNSW cosine search         │
+│     → ranked candidates + scores        │
+└─────────────┬───────────────────────────┘
+              │
+     score ≥ threshold?
+              │
+        ┌─────┴─────┐
+        │ Yes       │ No
+        ▼           ▼
+    Reuse        Groq LLM         ← Sprint 2 🔜
+    existing     generation
+    diagram      + Pydantic
+                 validation
+                     │
+                     ▼
+              Renderer selection  ← Sprint 3
+              (Mermaid/PlantUML/
+               Graphviz/Schemdraw)
+                     │
+                     ▼
+              Rendered SVG/PNG    ← Sprint 4
+              + validation loop
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 GraphTech_V1-main/
-├── frontend/                              # Vite + React 19 SPA (Presentation Layer)
+├── frontend/                          # Vite + React 19 SPA
 │   ├── src/
-│   │   ├── api/                           # Backend API client (client.js)
-│   │   ├── assets/                        # Static assets and backgrounds
-│   │   ├── components/                    # UI Components
-│   │   │   ├── Auth/                      # GoogleAuthModal.jsx
-│   │   │   ├── Background/                # CleanBackground.jsx, Background3D.jsx (Three.js)
-│   │   │   ├── Chat/                      # ChatPanel.jsx, ChatInput.jsx, MessageBubble.jsx
-│   │   │   ├── Home/                      # ChatGPTWelcomeHero.jsx (Discover page)
-│   │   │   ├── Modal/                     # FullScreenImageViewer.jsx
-│   │   │   ├── Navbar/                    # Navbar.jsx
-│   │   │   ├── Sidebar/                   # HistorySidebar.jsx
-│   │   │   └── Studio/                    # UnifiedStudioTab.jsx, DiagramViewer.jsx, PipelineProgress.jsx
-│   │   ├── data/                          # Diagram samples & mock data
-│   │   ├── App.jsx                        # Main Application component
-│   │   └── main.jsx                       # Entrypoint
-│   ├── .env.example                       # Frontend environment template
+│   │   ├── api/                       # Backend API client
+│   │   ├── components/
+│   │   │   ├── Auth/                  # Google OAuth modal
+│   │   │   ├── Background/            # Three.js 3D background
+│   │   │   ├── Chat/                  # Chat panel + message bubbles
+│   │   │   ├── Home/                  # Discover / welcome page
+│   │   │   ├── Navbar/                # Top navigation
+│   │   │   ├── Sidebar/               # History sidebar
+│   │   │   └── Studio/                # Dual-pane diagram studio
+│   │   ├── App.jsx
+│   │   └── main.jsx
 │   └── package.json
 │
-├── backend/                               # FastAPI Application & Migrations
-│   ├── alembic/                           # Database migration scripts
-│   │   ├── versions/                      # Versioned migrations (0001_initial_schema.py)
-│   │   ├── env.py                         # Alembic migration environment
-│   │   └── script.py.mako
+├── backend/                           # FastAPI + SQLAlchemy + pgvector
+│   ├── alembic/
+│   │   └── versions/
+│   │       ├── 0001_initial_schema.py # users + diagram_requests tables
+│   │       ├── 0002_add_google_id.py  # google_id column on users
+│   │       └── 0003_vector_index.py   # HNSW index on embedding column ✅ Sprint 1
 │   ├── app/
-│   │   ├── api/                           # Route controllers (health.py, auth.py, diagrams.py, router.py)
-│   │   ├── core/                          # Settings (config.py), database.py, security.py, logging.py
-│   │   ├── models/                        # SQLAlchemy models (users.py, diagram_requests.py)
-│   │   ├── schemas/                       # Pydantic schemas (health.py, users.py, diagrams.py)
-│   │   ├── services/                      # Domain business logic stubs:
-│   │   │   ├── auth_service.py            # OAuth & user management
-│   │   │   ├── embedding_service.py       # Voyage AI embeddings & pgvector search
-│   │   │   ├── generation_service.py      # Groq LLM architecture generator
-│   │   │   ├── rendering_service.py       # Multi-renderer compiler
-│   │   │   └── validation_service.py      # Deterministic structural & AST validation
-│   │   └── main.py                        # FastAPI application factory, CORS, and lifecycle
-│   ├── alembic.ini                        # Alembic configuration
-│   ├── requirements.txt                   # Python dependencies
-│   ├── .env.example                       # Backend environment template
-│   └── Dockerfile                         # Backend container definition
+│   │   ├── api/
+│   │   │   ├── auth.py                # Google OAuth 2.0 flow
+│   │   │   ├── diagrams.py            # /prepare endpoint (Sprint 1) ✅
+│   │   │   ├── health.py
+│   │   │   ├── me.py
+│   │   │   └── router.py
+│   │   ├── core/
+│   │   │   ├── config.py              # All settings + feature flags
+│   │   │   ├── database.py
+│   │   │   ├── logging.py
+│   │   │   └── security.py            # JWT creation + validation
+│   │   ├── models/
+│   │   │   ├── users.py
+│   │   │   └── diagram_requests.py    # Vector(1024) embedding column
+│   │   ├── schemas/
+│   │   │   ├── diagrams.py            # PrepareRequest/Response schemas ✅
+│   │   │   ├── health.py
+│   │   │   └── users.py
+│   │   ├── services/
+│   │   │   ├── embedding_service.py   # Voyage AI client + pgvector search ✅
+│   │   │   ├── preprocessing_service.py # spaCy NLP pipeline ✅
+│   │   │   ├── generation_service.py  # Groq LLM (Sprint 2)
+│   │   │   ├── rendering_service.py   # Multi-renderer (Sprint 3)
+│   │   │   └── validation_service.py  # Structural validation (Sprint 4)
+│   │   └── main.py
+│   ├── scripts/
+│   │   └── seed_diagrams.py           # Seeds 8 real diagrams with Voyage embeddings ✅
+│   ├── tests/
+│   │   ├── conftest.py                # SQLite test fixtures
+│   │   ├── test_auth_flow.py          # Sprint 0: OAuth + session tests
+│   │   ├── test_db.py                 # Sprint 0: DB schema tests
+│   │   ├── test_embedding_service.py  # Sprint 1: Voyage client unit tests ✅
+│   │   ├── test_prepare_endpoint.py   # Sprint 1: /prepare endpoint tests ✅
+│   │   └── test_similarity_search.py  # Sprint 1: pgvector integration tests ✅
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── Dockerfile
 │
-├── docker-compose.yml                     # PostgreSQL 16 (pgvector) + FastAPI backend
-├── Complete_Implementation_Plan.md        # Comprehensive architectural specification
+├── docker-compose.yml
+├── Complete_Implementation_Plan.md
 └── README.md
 ```
 
 ---
 
-## 🗺️ Agile Sprint Roadmap
-
-The backend and pipeline integration are organized into systematic, testable sprints:
-
-| Sprint | Goal / Focus Area | Key Deliverables |
-| :--- | :--- | :--- |
-| **Sprint 0** (Completed) | **Foundations & Skeleton** | Monorepo layout, FastAPI skeleton, CORS, SQLAlchemy models with pgvector, Alembic initial migration, Docker Compose, frontend health client. |
-| **Sprint 1** | **Ingestion, Embeddings & Similarity Search** | Voyage AI (1024-dim) embedding generation, pgvector top-k cosine similarity query for diagram reuse, optional spaCy text preprocessing. |
-| **Sprint 2** | **Groq Generation & Schema Validation** | Groq structured JSON generation, Pydantic validation (no orphan edges / disconnected graphs), independent metric-based complexity scoring. |
-| **Sprint 3** | **Renderer Selection & Multi-Compiler** | Diagram type detection (ERD, VPC, Microservice, State Machine), deterministic JSON→DSL compiler (Mermaid, PlantUML, Graphviz, Schemdraw). |
-| **Sprint 4** | **Output Validation & Repair Loop** | Rendered SVG/PNG structural reconciliation against input JSON, bounded auto-repair and retry loop (max 2 retries). |
-| **Sprint 5** | **Frontend Full Wiring & History** | Replace frontend mock timeouts with real SSE / polling progress events, Google OAuth session persistence, PostgreSQL chat history. |
-| **Sprint 6** | **Gemini Creative Path & Hardening** | Dedicated creative image path via Gemini, rate limiting, request deduplication / idempotency, and timeout circuit breakers. |
-
----
-
-## 🛠️ Getting Started & Local Development
+## 🛠️ Local Development Setup
 
 ### Prerequisites
-- **Node.js** (v18+) & **npm**
-- **Python** (v3.11+)
-- **Docker** & **Docker Compose** (optional, for containerized PostgreSQL with `pgvector`)
+
+- **Python** 3.11+
+- **Node.js** 18+ & npm
+- **PostgreSQL** 14+ with the **pgvector** extension installed
+- A **Voyage AI** API key — [get one free at dash.voyageai.com](https://dash.voyageai.com/) (200M tokens free, no card needed)
+- A **Google OAuth** Client ID & Secret — [Google Cloud Console](https://console.cloud.google.com/)
 
 ---
 
-### Method 1: Running with Docker Compose
-
-To boot PostgreSQL (with the `pgvector` extension) and the FastAPI backend in containers:
+### 1. Clone & configure
 
 ```bash
-# Start PostgreSQL (pgvector) and FastAPI backend
-docker compose up -d
-
-# Verify backend health
-curl http://localhost:8000/health
-# Response: {"status": "ok"}
-```
-
-Then start the frontend:
-```bash
-cd frontend
-npm install
-npm run dev
+git clone <repo-url>
+cd GraphTech_V1-main
 ```
 
 ---
 
-### Method 2: Manual Local Setup
-
-#### 1. Backend Setup
+### 2. Backend setup
 
 ```bash
 cd backend
 
-# Create and activate Python virtual environment
+# Create virtual environment
 python -m venv .venv
 
-# On Windows:
+# Activate (Windows)
 .venv\Scripts\activate
-# On macOS/Linux:
-# source .venv/bin/activate
+# Activate (macOS/Linux)
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Create environment configuration
-cp .env.example .env
+# Download spaCy model (for optional preprocessing)
+python -m spacy download en_core_web_sm
 
-# Run database migrations
+# Configure environment
+cp .env.example .env
+# → Edit .env and fill in DATABASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, VOYAGE_API_KEY
+
+# Apply all DB migrations (creates tables + HNSW vector index)
 alembic upgrade head
 
-# Start FastAPI server
+# Seed the database with 8 real diagram examples + Voyage embeddings
+python scripts/seed_diagrams.py
+
+# Start the backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- **Backend Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
-- **Interactive Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc API Documentation:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+| Endpoint | URL |
+|---|---|
+| Health check | http://localhost:8000/health |
+| Swagger UI (API docs) | http://localhost:8000/docs |
+| ReDoc | http://localhost:8000/redoc |
 
 ---
 
-#### 2. Frontend Setup
+### 3. Frontend setup
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Create environment configuration
-cp .env.example .env
-
-# Start Vite development server
 npm run dev
 ```
 
-- **Frontend Application:** [http://localhost:5173](http://localhost:5173)
+**Frontend:** http://localhost:5173
+
+---
+
+### 4. Docker Compose (alternative — PostgreSQL only)
+
+```bash
+docker compose up -d        # starts PostgreSQL with pgvector
+# then run backend manually as above
+```
 
 ---
 
@@ -185,45 +223,129 @@ npm run dev
 
 ### Backend (`backend/.env`)
 
-| Variable | Description | Example / Default |
-| :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/graphtech` |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your-google-client-id.apps.googleusercontent.com` |
-| `GOOGLE_CLIENT_SECRET`| Google OAuth Client Secret | `your-google-client-secret` |
-| `VOYAGE_API_KEY` | Voyage AI API key for embeddings | `your-voyage-api-key` |
-| `GROQ_API_KEY` | Groq API key for structured generation | `your-groq-api-key` |
-| `GEMINI_API_KEY` | Gemini API key for creative image path | `your-gemini-api-key` |
-| `SESSION_SECRET` | Secret key for auth sessions / tokens | `supersecret-session-key` |
-| `CORS_ORIGINS` | Permitted frontend origins | `["http://localhost:5173", "http://127.0.0.1:5173"]` |
-| `HOST` / `PORT` | FastAPI server binding | `0.0.0.0` / `8000` |
+| Variable | Required | Description |
+| :--- | :---: | :--- |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth Client Secret |
+| `SESSION_SECRET` | ✅ | Long random JWT signing secret |
+| `VOYAGE_API_KEY` | ✅ Sprint 1 | Voyage AI key for embeddings |
+| `VOYAGE_MODEL` | — | Default: `voyage-3-large` |
+| `VOYAGE_TIMEOUT_SECONDS` | — | Default: `15.0` |
+| `VOYAGE_MAX_RETRIES` | — | Default: `3` |
+| `SIMILARITY_THRESHOLD` | — | Cosine score cutoff. Default: `0.75` |
+| `SIMILARITY_TOP_K` | — | Max candidates returned. Default: `5` |
+| `ENABLE_SPACY_PREPROCESSING` | — | Toggle spaCy NLP stage. Default: `false` |
+| `GROQ_API_KEY` | 🔜 Sprint 2 | Groq LLM key |
+| `GEMINI_API_KEY` | 🔜 Sprint 6 | Gemini creative path key |
+| `CORS_ORIGINS` | — | Default: `["http://localhost:5173"]` |
+| `HOST` / `PORT` | — | Default: `0.0.0.0` / `8000` |
 
 ### Frontend (`frontend/.env`)
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `VITE_API_BASE_URL` | Base URL of the FastAPI backend | `http://localhost:8000` |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your-google-client-id.apps.googleusercontent.com` |
+| `VITE_API_BASE_URL` | FastAPI backend URL | `http://localhost:8000` |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID | — |
 
 ---
 
-## 🗄️ Database Schema & Alembic
+## 🗄️ Database
 
-The database uses PostgreSQL with the `pgvector` extension:
+PostgreSQL with `pgvector` extension.
 
-- **`users` Table:** Stores authenticated user identities (`id`, `email`, `name`, `avatar_url`, `created_at`).
-- **`diagram_requests` Table:** Stores prompts, vector embeddings (`Vector(1024)`), generated structured JSON (`JSONB`), complexity metrics, renderer choices, execution statuses, and output artifact paths.
+### Tables
 
-### Managing Migrations
+| Table | Purpose |
+|---|---|
+| `users` | Authenticated users (Google OAuth) — `id`, `email`, `name`, `avatar_url`, `google_id` |
+| `diagram_requests` | Diagram history — `prompt`, `embedding` (Vector 1024), `structured_json` (JSONB), `complexity`, `renderer`, `status`, `output_path` |
+
+### Indexes
+
+| Index | Type | Column | Purpose |
+|---|---|---|---|
+| `diagram_requests_pkey` | B-tree | `id` | Primary key |
+| `ix_diagram_requests_user_id` | B-tree | `user_id` | Filter by user |
+| `idx_diagram_requests_embedding_hnsw` | **HNSW** | `embedding` | Fast cosine similarity search |
+
+### Alembic migration commands
+
+```bash
+alembic upgrade head          # apply all migrations
+alembic downgrade -1          # roll back one
+alembic revision --autogenerate -m "my change"  # create new migration
+```
+
+---
+
+## 🧪 Running Tests
 
 ```bash
 cd backend
 
-# Apply migrations
-alembic upgrade head
+# All unit tests (no Voyage API key needed)
+pytest tests/ --ignore=tests/test_similarity_search.py -v
 
-# Rollback one revision
-alembic downgrade -1
-
-# Generate a new migration after editing models
-alembic revision --autogenerate -m "describe_changes"
+# Full suite including pgvector integration (requires VOYAGE_API_KEY)
+pytest tests/ -v
 ```
+
+**Current test count: 32 passing** (Sprint 0 + Sprint 1)
+
+| File | Tests | Needs API key? |
+|---|---|---|
+| `test_auth_flow.py` | 6 | No |
+| `test_db.py` | 6 | No |
+| `test_embedding_service.py` | 9 | No (mocked) |
+| `test_prepare_endpoint.py` | 11 | No (mocked) |
+| `test_similarity_search.py` | 4 | Yes (auto-skipped if absent) |
+
+---
+
+## 🔌 API Endpoints
+
+### Implemented (Sprint 0 + Sprint 1)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | — | Service health check |
+| `GET` | `/api/health` | — | API health check |
+| `GET` | `/api/auth/google/login` | — | Redirect to Google consent |
+| `GET` | `/api/auth/google/callback` | — | OAuth callback, sets JWT cookie |
+| `GET` | `/api/auth/session` | Cookie | Returns current user |
+| `POST` | `/api/auth/logout` | Cookie | Clears session cookie |
+| `GET` | `/api/me` | Cookie | Current user profile |
+| `GET` | `/api/diagrams/` | — | Placeholder (Sprint 5) |
+| `POST` | `/api/diagrams/prepare` | — | **Sprint 1** — preprocess → embed → similarity search |
+
+### Coming soon
+
+| Method | Path | Sprint | Description |
+|---|---|---|---|
+| `POST` | `/api/diagrams/generate` | Sprint 2 | Full generation pipeline |
+| `GET` | `/api/diagrams/{id}` | Sprint 5 | Retrieve saved diagram |
+| `GET` | `/api/diagrams/history` | Sprint 5 | User diagram history |
+
+---
+
+## 🔑 Getting API Keys
+
+### Voyage AI (Sprint 1 — Embeddings)
+1. Go to [dash.voyageai.com](https://dash.voyageai.com/)
+2. Sign up with Google or GitHub (one click)
+3. Navigate to **API Keys** → **Create new secret key**
+4. Copy the key (`pa-xxxxxxxx`) into `backend/.env` as `VOYAGE_API_KEY`
+5. **Free tier:** 200 million tokens — no credit card required
+
+### Google OAuth (Sprint 0 — Auth)
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**
+2. Create **OAuth 2.0 Client ID** (Web application)
+3. Add `http://localhost:8000/api/auth/google/callback` to Authorized Redirect URIs
+4. Copy Client ID and Secret into `backend/.env`
+
+---
+
+## 📄 License
+
+MIT
