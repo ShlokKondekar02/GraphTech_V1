@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.75  # cosine similarity threshold for reuse decision
     SIMILARITY_TOP_K: int = 5           # number of candidates returned
 
+    # Groq LLM settings (Sprint 2)
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq model to use for structured JSON generation
+    GROQ_TIMEOUT_SECONDS: float = 30.0
+    GROQ_MAX_RETRIES: int = 3
+
+    # Complexity ceiling (Sprint 2)
+    # Requests whose independently computed complexity score >= this ceiling are
+    # rejected BEFORE any rendering is attempted.  Tune based on test-set results.
+    COMPLEXITY_CEILING: float = 50.0
+
     # Feature flags (Sprint 1)
     ENABLE_SPACY_PREPROCESSING: bool = False  # toggle spaCy pre-processing stage
 
