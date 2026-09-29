@@ -1,6 +1,7 @@
 from app.schemas.health import HealthResponse
 from app.schemas.users import UserBase, UserCreate, UserResponse
-from app.schemas.diagrams import DiagramGenerateRequest, DiagramResponse
+from app.schemas.diagrams import DiagramGenerateRequest, DiagramResponse, GenerateRequest, GenerateResponse
+from app.schemas.groq_contract import GroqDiagramResponse, NodeObject, EdgeObject, DiagramAttributes
 
 __all__ = [
     "HealthResponse",
@@ -8,5 +9,11 @@ __all__ = [
     "UserCreate",
     "UserResponse",
     "DiagramGenerateRequest",
-    "DiagramResponse"
+    "DiagramResponse",
+    "GenerateRequest",
+    "GenerateResponse",
+    "GroqDiagramResponse",
+    "NodeObject",
+    "EdgeObject",
+    "DiagramAttributes",
 ]
