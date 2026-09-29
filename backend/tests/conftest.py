@@ -3,12 +3,16 @@ pytest fixtures: overridden DB using a clean in-memory SQLite database.
 
 We can't use SQLite directly with JSONB and Vector column types (Postgres-specific).
 Solution: monkey-patch those columns to use SQLite-compatible JSON/Text types
-*before* metadata.create_all() is called. This is done purely in tests — the
+*before* metadata.create_all() is called. This is done purely in tests -- the
 real models remain unchanged.
+
+Sprint 2 additions:
+  - Also patches the new Float column (complexity_score) to use SQLite Float.
+  - Also patches JSONB on complexity_metrics column.
 """
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, Text, JSON
+from sqlalchemy import create_engine, Text, JSON, Float
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
@@ -26,19 +30,20 @@ def _patch_postgres_types():
     Only called once before table creation.
     """
     from app.models import diagram_requests as dr_mod
-    from app.models import users  # noqa: F401 — ensure User is loaded
+    from app.models import users  # noqa: F401 -- ensure User is loaded
 
     table = dr_mod.DiagramRequest.__table__
 
-    # Replace Vector(1024) → Text
+    # Replace Vector(1024) -> Text
     emb_col = table.c.get("embedding")
     if emb_col is not None:
         emb_col.type = Text()
 
-    # Replace JSONB → JSON (SQLite has native JSON support via sqlite3)
-    sj_col = table.c.get("structured_json")
-    if sj_col is not None:
-        sj_col.type = JSON()
+    # Replace JSONB -> JSON (SQLite has native JSON support via sqlite3)
+    for col_name in ("structured_json", "complexity_metrics"):
+        col = table.c.get(col_name)
+        if col is not None:
+            col.type = JSON()
 
 
 @pytest.fixture(scope="function")
