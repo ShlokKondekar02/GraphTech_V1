@@ -145,8 +145,8 @@ real backend, not to redesign it.**
 
 -   A diagram-type taxonomy/detector.
 
--   A renderer abstraction (Mermaid CLI, PlantUML, Graphviz, Schemdraw)
-    and the renderer-selection logic.
+-   A renderer abstraction (Kroki open-source unified rendering engine
+    supporting Mermaid, PlantUML, Graphviz DOT, etc.) and the renderer-selection logic.
 
 -   Output/image validation (SVG/PNG structural checks, node/edge count
     reconciliation, OCR/label checks).
@@ -202,8 +202,9 @@ provided. Concretely:
     embedding → pgvector similarity search → reuse-or-generate branch →
     Groq structured JSON (only when generating fresh) → independent
     complexity classification → Pydantic + deterministic validation →
-    diagram-type detection → renderer selection → renderer code
-    generation → Mermaid/PlantUML/Graphviz/Schemdraw execution →
+    diagram-type detection → renderer selection → deterministic
+    AST-to-DSL compilation (Mermaid, PlantUML, Graphviz DOT) →
+    Kroki unified rendering execution (`POST /{format}/svg`) →
     output/image validation → bounded repair loop → response.
 
 -   The response is shaped to match (a superset of) the existing diagram
@@ -236,7 +237,7 @@ separated internal modules (ingestion/, retrieval/, generation/,
 rendering/, validation/, auth/). Each sprint ends with something
 demoable end-to-end, even if narrow.
 
-**Sprint 0 --- Foundations, Auth, and Project Skeleton**
+**Sprint 0 --- Foundations, Auth, and Project Skeleton [COMPLETED]**
 
 **Sprint goal:** Replace the fake-everything shell with a real backend
 skeleton and real authentication, with zero AI functionality yet --- so
@@ -277,7 +278,7 @@ every later sprint builds on a secure, testable base.
     client-side.
 
 **Sprint 1 --- Ingestion, Embeddings, and Similarity Search (Reuse
-Path)**
+Path) [COMPLETED]**
 
 **Sprint goal:** Stand up the \"left half\" of the pipeline --- prompt
 in, similarity search out --- without any generation yet, so the
@@ -317,7 +318,7 @@ reuse-vs-generate decision can be built and tested in isolation.
     threshold.
 
 **Sprint 2 --- Groq Generation, Pydantic Validation, and Independent
-Complexity Scoring**
+Complexity Scoring [COMPLETED]**
 
 **Sprint goal:** Build the \"generate fresh\" branch and make it
 impossible for the LLM\'s own claims (validity, complexity) to be
@@ -366,49 +367,53 @@ trusted blindly.
     after burning render time.
 
 **Sprint 3 --- Diagram-Type Detection, Renderer Selection, and
-Deterministic Rendering**
+Deterministic Rendering (via Kroki)**
 
-**Sprint goal:** Turn validated structured JSON into an actual image,
-choosing the right renderer deterministically rather than guessing.
+**Sprint goal:** Turn validated structured JSON into an actual visual image (SVG),
+choosing the right diagram renderer deterministically and compiling via Kroki's
+unified open-source rendering engine (supporting Mermaid, PlantUML, Graphviz DOT).
 
--   **Backend:** Diagram-type detector (rules over the validated JSON\'s
-    shape/keywords --- e.g., presence of primary-key/foreign-key fields
-    ⇒ ERD; state/transition fields ⇒ state machine --- LLM-assisted only
-    as a fallback, never as the sole source of truth);
-    renderer-selection mapping (diagram type →
-    Mermaid/PlantUML/Graphviz/Schemdraw); deterministic
-    JSON→renderer-source compiler for each supported renderer (the
-    \"Option B\" path in the diagram --- prefer this over LLM-generated
-    renderer code for reliability and cost).
+-   **Backend:**
+    -   **Kroki Client & Service:** Stand up an asynchronous HTTP client (`httpx`)
+        connecting to Kroki API (`KROKI_BASE_URL`, configurable to public `https://kroki.io`
+        or local Docker container `http://localhost:8001`) with timeouts and retry handling.
+        This completely eliminates the need for heavyweight local OS binary installs
+        (`@mermaid-js/mermaid-cli`, Java runtime, Graphviz `dot.exe`).
+    -   **Diagram-Type Detector:** Rules over the validated JSON's structure
+        (e.g., entity/relations ⇒ ERD; actor/lifeline steps ⇒ sequence; states/transitions ⇒
+        state machine; services/dependencies ⇒ architecture/flowchart).
+    -   **Renderer-Selection Mapping:** Maps diagram type to the optimal Kroki format:
+        -   `flowchart`, `sequence` ⇒ `mermaid`
+        -   `erd`, `class` ⇒ `plantuml`
+        -   `architecture`, `network`, `state_machine` ⇒ `graphviz` (DOT)
+    -   **Deterministic AST→DSL Compilers:** Compilers that transform our Pydantic
+        `GroqDiagramResponse` AST into clean, syntactically guaranteed DSL strings
+        (Mermaid syntax, PlantUML syntax, or Graphviz DOT syntax).
+    -   **Unified Render Execution:** Sends compiled DSL string via `POST /{format}/svg`
+        to Kroki, receiving clean SVG markup and returning `{ renderer, dsl_code, svg_content }`.
 
--   **Frontend:** Wire DiagramViewer\'s preview/code toggle to real
-    svgContent/dslCode/renderer fields returned by the backend; keep the
-    zoom/download/copy features as-is (they already operate on generic
-    props).
+-   **Frontend:** Wire `DiagramViewer`'s preview/code toggle to real
+    `svgContent`, `dslCode`, and `renderer` fields returned by the backend; keep the
+    zoom/download/copy features as-is (they already operate on generic props).
 
--   **AI/LLM work:** Only as an optional fallback code-generation path
-    when the deterministic compiler doesn\'t yet support an edge case
-    --- flagged and logged distinctly from the deterministic path so
-    quality can be tracked separately.
+-   **AI/LLM work:** None required for rendering. Deterministic compilation
+    guarantees syntax validity and zero hallucination of diagram syntax.
 
--   **Database work:** Store renderer, diagram_type, and output_path
-    (rendered file location) per request.
+-   **Database work:** Update `diagram_requests` record with `renderer`,
+    `diagram_type`, `dsl_code`, and `output_path` (or inline SVG content) per request.
 
--   **Validation/testing:** Confirm renderer choice matches diagram type
-    for a labeled test set; confirm the compiled DSL is syntactically
-    valid for its target engine before invoking the renderer binary
-    (catch errors before shelling out).
+-   **Validation/testing:** Unit tests for each deterministic compiler (Mermaid,
+    PlantUML, Graphviz); integration tests with mocked and live Kroki HTTP responses;
+    tests asserting renderer selection matches diagram types.
 
--   **Dependencies:** Sprint 2 (needs validated structured JSON as
-    input).
+-   **Dependencies:** Sprint 2 (needs validated structured JSON as input).
 
--   **Deliverables:** End-to-end: prompt → validated JSON → correct
-    renderer chosen → real SVG/PNG produced and shown in the existing
-    DiagramViewer UI.
+-   **Deliverables:** End-to-end: prompt → validated JSON → correct renderer chosen →
+    DSL compiled → Kroki renders real SVG → returned in response payload.
 
--   **Definition of Done:** For each of the 4 target diagram types, a
-    real prompt produces a real rendered image via the correct engine,
-    visible in the actual frontend (not a hardcoded sample).
+-   **Definition of Done:** For each target diagram type, validated structured JSON
+    is deterministically compiled and rendered into a valid SVG via Kroki, visible in the
+    frontend DiagramViewer.
 
 **Sprint 4 --- Output Validation and Bounded Repair Loop**
 
@@ -671,7 +676,7 @@ remaining gaps, and prepare a stable demo.
 
   API failures/timeouts       Hung UI, unclear        Per-dependency timeouts and
   (Voyage, Groq, Gemini,      errors, retries         circuit breakers; distinct,
-  renderer binaries)          hammering a down        user-legible error states per
+  Kroki rendering service)    hammering a down        user-legible error states per
                               service                 failure point rather than a
                                                       generic spinner or crash
 

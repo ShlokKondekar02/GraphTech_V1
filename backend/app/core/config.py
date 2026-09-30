@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # rejected BEFORE any rendering is attempted.  Tune based on test-set results.
     COMPLEXITY_CEILING: float = 50.0
 
+    # Rendering settings (Sprint 3: Kroki open-source renderer)
+    KROKI_BASE_URL: str = "https://kroki.io"
+    KROKI_TIMEOUT_SECONDS: float = 20.0
+    KROKI_MAX_RETRIES: int = 3
+
     # Feature flags (Sprint 1)
     ENABLE_SPACY_PREPROCESSING: bool = False  # toggle spaCy pre-processing stage
 
