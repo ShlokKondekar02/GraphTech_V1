@@ -84,3 +84,27 @@ export async function getMe() {
   }
   return response.json();
 }
+
+// ── Diagram Generation (Sprint 3) ─────────────────────────────────────────────
+
+/**
+ * Generate a diagram from a natural language prompt.
+ * Returns the validated and rendered diagram with SVG content and DSL code.
+ * @param {string} prompt
+ * @returns {Promise<object>}
+ */
+export async function generateDiagram(prompt) {
+  const response = await fetch(`${API_BASE_URL}/api/diagrams/generate`, {
+    ...defaultOptions,
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || errorData.rejection_reason || `Generation failed: ${response.status}`;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
