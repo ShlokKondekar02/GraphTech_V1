@@ -86,7 +86,7 @@ export function DiagramViewer({
                   background: viewMode === 'code' ? 'var(--bg-subtle)' : 'transparent' 
                 }}
                 onClick={() => setViewMode('code')}
-                title="View Mermaid DSL Source Code"
+                title={`View ${diagram?.renderer || 'Diagram'} DSL Source Code`}
               >
                 <Code size={14} />
               </button>
@@ -200,7 +200,7 @@ export function DiagramViewer({
         ) : (
           <div className="dsl-code-wrapper">
             <div className="dsl-code-header">
-              <span>Mermaid DSL Source Specification</span>
+              <span>{diagram?.renderer ? `${diagram.renderer} DSL Source Specification` : 'Diagram DSL Source Specification'}</span>
               <button
                 type="button"
                 className="btn-copy-code-floating"
