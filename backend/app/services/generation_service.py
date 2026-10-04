@@ -58,6 +58,8 @@ from app.services.embedding_service import (
     embedding_service,
 )
 from app.services.preprocessing_service import build_preprocessor
+from app.services.rendering_service import rendering_service
+from app.services.scope_guard import scope_guard
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -103,6 +105,9 @@ class GenerationResult:
     similarity_score: Optional[float] = field(default=None)
     validation_errors: List[str] = field(default_factory=list)
     rejection_reason: Optional[str] = field(default=None)
+    renderer: Optional[str] = field(default=None)
+    dsl_code: Optional[str] = field(default=None)
+    svg_content: Optional[str] = field(default=None)
     spacy_enabled: bool = field(default=False)
     candidates_count: int = field(default=0)
 
@@ -156,6 +161,27 @@ class GenerationService:
             len(prompt),
             user_id or "anonymous",
         )
+
+        # ---- Stage 0: Domain Scope Guard (CS/IT technical diagrams only) ---
+        scope_check = scope_guard.check_scope(prompt)
+        if not scope_check.is_in_scope:
+            logger.warning(
+                "Prompt rejected by ScopeGuard (domain=%s): %s",
+                scope_check.detected_domain,
+                scope_check.rejection_reason,
+            )
+            result = GenerationResult(
+                request_id=request_id,
+                status="rejected_out_of_scope",
+                source="fresh",
+                prompt=prompt,
+                preprocessed_prompt=prompt,
+                rejection_reason=scope_check.rejection_reason,
+                spacy_enabled=False,
+                candidates_count=0,
+            )
+            self._persist(db, result, user_id)
+            return result
 
         # ---- Stage 1: spaCy preprocessing ----------------------------------
         preprocessor = build_preprocessor()
@@ -288,16 +314,22 @@ class GenerationService:
                 candidates_count=candidates_count,
             )
 
+        # Sprint 3: Compile and render diagram via Kroki
+        render_res = rendering_service.render_diagram(validated_model.to_dict())
+
         return GenerationResult(
             request_id=request_id,
             status="cache_reused",
             source="cache",
             prompt=prompt,
             preprocessed_prompt=preprocessed_prompt,
-            diagram_type=validated_model.diagram_type,
+            diagram_type=render_res.diagram_type or validated_model.diagram_type,
             structured_json=validated_model.to_dict(),
             complexity=complexity,
             similarity_score=candidate.similarity,
+            renderer=render_res.renderer,
+            dsl_code=render_res.dsl_code,
+            svg_content=render_res.svg_content,
             spacy_enabled=spacy_enabled,
             candidates_count=candidates_count,
         )
@@ -383,15 +415,21 @@ class GenerationService:
                 candidates_count=candidates_count,
             )
 
+        # Sprint 3: Compile and render diagram via Kroki
+        render_res = rendering_service.render_diagram(validated_model.to_dict())
+
         return GenerationResult(
             request_id=request_id,
             status="validated",
             source="fresh",
             prompt=prompt,
             preprocessed_prompt=preprocessed_prompt,
-            diagram_type=validated_model.diagram_type,
+            diagram_type=render_res.diagram_type or validated_model.diagram_type,
             structured_json=validated_model.to_dict(),
             complexity=complexity,
+            renderer=render_res.renderer,
+            dsl_code=render_res.dsl_code,
+            svg_content=render_res.svg_content,
             spacy_enabled=spacy_enabled,
             candidates_count=candidates_count,
         )
@@ -431,6 +469,9 @@ class GenerationService:
                     result.complexity.to_dict() if result.complexity else None
                 ),
                 source=result.source,
+                renderer=result.renderer,
+                dsl_code=result.dsl_code,
+                svg_content=result.svg_content,
             )
             db.add(row)
             db.commit()
