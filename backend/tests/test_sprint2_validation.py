@@ -497,3 +497,92 @@ def test_t22_extra_fields_on_node_accepted():
     # Extra fields should NOT cause rejection -- Pydantic ignores them by default
     # The real guard is that complexity is computed by ComplexityService, not read from here
     assert result.is_valid, f"Extra fields caused unexpected rejection: {result.errors}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Specialized Discriminated Diagram Schemas (T23 - T27)
+# ---------------------------------------------------------------------------
+
+
+def test_t23_erd_specialized_schema():
+    """ERD payload gets instantiated as ErdDiagramResponse and normalizes edge types."""
+    payload = {
+        "diagram_type": "erd",
+        "nodes": [_valid_node("n1", "Users", "service"), _valid_node("n2", "Orders", "generic")],
+        "edges": [_valid_edge("e1", "n1", "n2")],
+        "attributes": _valid_attributes(),
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid
+    model = result.validated_model
+    assert model.diagram_type == "erd"
+    assert model.nodes[0].type == "entity"
+    assert model.edges[0].type in {"one_to_many", "calls"}
+
+
+def test_t24_sequence_specialized_schema():
+    """Sequence payload gets instantiated as SequenceDiagramResponse."""
+    payload = {
+        "diagram_type": "sequence",
+        "nodes": [_valid_node("n1", "Client", "actor"), _valid_node("n2", "Server", "service")],
+        "edges": [{"id": "e1", "source": "n1", "target": "n2", "label": "Login", "type": "sync_call"}],
+        "attributes": _valid_attributes(),
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid
+    model = result.validated_model
+    assert model.diagram_type == "sequence"
+    assert model.edges[0].type == "calls"
+
+
+def test_t25_class_specialized_schema():
+    """Class diagram payload gets instantiated as ClassDiagramResponse."""
+    payload = {
+        "diagram_type": "class",
+        "nodes": [_valid_node("n1", "Animal", "generic"), _valid_node("n2", "Dog", "generic")],
+        "edges": [{"id": "e1", "source": "n2", "target": "n1", "label": "extends", "type": "extends"}],
+        "attributes": _valid_attributes(),
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid
+    model = result.validated_model
+    assert model.diagram_type == "class"
+    assert model.nodes[0].type == "class"
+    assert model.edges[0].type == "inherits"
+
+
+def test_t26_state_machine_specialized_schema():
+    """State machine payload allows self-loops and state node normalization."""
+    payload = {
+        "diagram_type": "state_machine",
+        "nodes": [_valid_node("n1", "Idle", "generic")],
+        "edges": [{"id": "e1", "source": "n1", "target": "n1", "label": "Ping", "type": "transitions_to"}],
+        "attributes": _valid_attributes(),
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid
+    model = result.validated_model
+    assert model.diagram_type == "state_machine"
+    assert model.nodes[0].type == "state"
+    assert len(model.edges) == 1  # Self-loop preserved for state_machine
+
+
+def test_t27_network_specialized_schema():
+    """Network diagram payload gets instantiated as NetworkDiagramResponse."""
+    payload = {
+        "diagram_type": "network",
+        "nodes": [_valid_node("n1", "Router1", "generic")],
+        "edges": [],
+        "attributes": {
+            "title": "Network Topology",
+            "description": "Lab setup",
+            "allows_disconnected": True,
+            "direction": "auto",
+        },
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid
+    model = result.validated_model
+    assert model.diagram_type == "network"
+    assert model.nodes[0].type == "server"
+
