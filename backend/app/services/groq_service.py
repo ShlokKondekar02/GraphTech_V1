@@ -316,6 +316,79 @@ class GroqService:
         )
         return validation_result
 
+    def repair_diagram_json(
+        self,
+        prompt: str,
+        invalid_raw: str,
+        error_summary: str,
+        timeout: Optional[float] = None,
+    ) -> ValidationResult:
+        """
+        Send a repair prompt to Groq with the original prompt, failed response,
+        and exact validation/compilation error traceback to get a corrected JSON.
+        """
+        if timeout is None:
+            timeout = settings.GROQ_TIMEOUT_SECONDS
+
+        client = self._get_client()
+        model = settings.GROQ_MODEL
+        repair_message = (
+            f"Original prompt:\n{prompt}\n\n"
+            f"Your previous JSON output was invalid:\n{invalid_raw}\n\n"
+            f"Validation errors:\n{error_summary}\n\n"
+            "Please fix ONLY the reported errors and return a corrected, valid JSON object matching the contract schema."
+        )
+
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT_V1},
+            {"role": "user", "content": repair_message},
+        ]
+
+        logger.info("Calling Groq repair model=%s for failed payload.", model)
+        result_holder: Dict[str, Any] = {}
+
+        def _do_call() -> None:
+            try:
+                raw_content = _call_groq_with_retry(client, model, messages, timeout)
+                result_holder["content"] = raw_content
+            except Exception as exc:
+                result_holder["error"] = exc
+
+        thread = threading.Thread(target=_do_call, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout + 5)
+
+        if thread.is_alive():
+            raise GroqTimeoutError(f"Groq API repair did not respond within {timeout:.0f} seconds.")
+
+        if "error" in result_holder:
+            exc = result_holder["error"]
+            if isinstance(exc, (GroqRateLimitError, RetryError)):
+                raise GroqRateLimitError(f"Groq rate-limit: all retries exhausted.") from exc
+            if isinstance(exc, GroqAPIError):
+                raise
+            raise GroqAPIError(str(exc)) from exc
+
+        raw_content: str = result_holder.get("content", "")
+
+        try:
+            raw_dict = json.loads(raw_content)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise GroqParseError(
+                f"Groq repair response could not be parsed as JSON: {exc}."
+            ) from exc
+
+        validation_result = validation_service.validate(raw_dict)
+        if not validation_result.is_valid:
+            raise GroqValidationError(
+                f"Groq repair response failed {validation_result.layer} validation: "
+                f"{validation_result.error_summary}",
+                validation_result=validation_result,
+            )
+
+        return validation_result
+
 
 # Module-level singleton
 groq_service = GroqService()
+
