@@ -32,6 +32,7 @@ Status vocabulary:
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -113,7 +114,7 @@ class GenerationResult:
 
     @property
     def is_success(self) -> bool:
-        return self.status in ("validated", "cache_reused")
+        return self.status in ("validated", "cache_reused", "auto_repaired")
 
     @property
     def is_rejected(self) -> bool:
@@ -154,6 +155,7 @@ class GenerationService:
         -------
         GenerationResult -- always returned, even for rejections
         """
+        start_time = time.perf_counter()
         request_id = str(uuid.uuid4())
         logger.info(
             "Pipeline start: request_id=%s prompt_len=%d user=%s",
@@ -242,6 +244,14 @@ class GenerationService:
             candidates_count=len(candidates),
         )
         self._persist(db, result, user_id)
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "Research Telemetry: request_id=%s status=%s source=%s latency=%.2fms",
+            result.request_id,
+            result.status,
+            result.source,
+            latency_ms,
+        )
         return result
 
     # ---- Cache hit path ----------------------------------------------------
@@ -345,94 +355,140 @@ class GenerationService:
         candidates_count: int,
     ) -> GenerationResult:
         """
-        Call Groq, validate the response, compute complexity, and return result.
-        Complexity ceiling check happens here -- BEFORE rendering (Sprint 3).
+        Call Groq, validate response, handle auto-repair loop (max 2 retries),
+        compute complexity, render diagram, and validate SVG output.
         """
         logger.info("Cache miss -- calling Groq for fresh generation.")
 
-        try:
-            val_result = groq_service.generate_diagram_json(preprocessed_prompt)
-        except GroqValidationError as exc:
-            logger.warning(
-                "Fresh generation: Groq response failed validation: %s",
-                exc.validation_result.error_summary,
-            )
+        max_attempts = 2
+        attempt = 0
+        last_error_summary = ""
+        last_raw_payload = ""
+        repair_history: List[Dict[str, Any]] = []
+
+        while attempt <= max_attempts:
+            try:
+                if attempt == 0:
+                    val_result = groq_service.generate_diagram_json(preprocessed_prompt)
+                else:
+                    logger.info("Executing auto-repair attempt %d for request_id=%s", attempt, request_id)
+                    val_result = groq_service.repair_diagram_json(
+                        prompt=preprocessed_prompt,
+                        invalid_raw=last_raw_payload,
+                        error_summary=last_error_summary,
+                    )
+            except GroqValidationError as exc:
+                last_error_summary = exc.validation_result.error_summary
+                last_raw_payload = str(exc)
+                repair_history.append({"attempt": attempt, "error": last_error_summary})
+                attempt += 1
+                continue
+            except GroqParseError as exc:
+                last_error_summary = f"Groq JSON parse error: {exc}"
+                last_raw_payload = str(exc)
+                repair_history.append({"attempt": attempt, "error": last_error_summary})
+                attempt += 1
+                continue
+            except (GroqConfigError, GroqAPIError, GroqTimeoutError, GroqRateLimitError) as exc:
+                return self._make_error_result(
+                    request_id, prompt, preprocessed_prompt, spacy_enabled, candidates_count,
+                    reason=f"Groq API error: {exc}",
+                )
+
+            validated_model = val_result.validated_model
+            if validated_model is None:
+                attempt += 1
+                continue
+
+            # Independently compute complexity
+            complexity = complexity_service.compute_from_groq_response(validated_model)
+
+            if complexity.exceeds_ceiling:
+                logger.warning(
+                    "Fresh generation: complexity ceiling exceeded (score=%.2f) -- rejecting pre-render.",
+                    complexity.score,
+                )
+                return GenerationResult(
+                    request_id=request_id,
+                    status="rejected_complexity",
+                    source="fresh",
+                    prompt=prompt,
+                    preprocessed_prompt=preprocessed_prompt,
+                    diagram_type=validated_model.diagram_type,
+                    structured_json=None,
+                    complexity=complexity,
+                    rejection_reason=complexity.rejection_reason,
+                    spacy_enabled=spacy_enabled,
+                    candidates_count=candidates_count,
+                )
+
+            # Compile and render diagram via Kroki/Compilers
+            render_res = rendering_service.render_diagram(validated_model.to_dict())
+
+            # SVG XML Reconciliation Engine Check
+            svg_ok, svg_err = self._validate_svg_xml(render_res.svg_content)
+            if not svg_ok:
+                last_error_summary = f"SVG Reconciliation error: {svg_err}"
+                import json
+                last_raw_payload = json.dumps(validated_model.to_dict())
+                repair_history.append({"attempt": attempt, "error": last_error_summary})
+                attempt += 1
+                continue
+
+            status_str = "validated" if attempt == 0 else "auto_repaired"
             return GenerationResult(
                 request_id=request_id,
-                status="rejected_invalid",
+                status=status_str,
                 source="fresh",
                 prompt=prompt,
                 preprocessed_prompt=preprocessed_prompt,
-                validation_errors=exc.validation_result.errors,
-                rejection_reason=(
-                    f"Groq response failed {exc.validation_result.layer} validation: "
-                    f"{exc.validation_result.error_summary}"
-                ),
-                spacy_enabled=spacy_enabled,
-                candidates_count=candidates_count,
-            )
-        except GroqParseError as exc:
-            return GenerationResult(
-                request_id=request_id,
-                status="rejected_invalid",
-                source="fresh",
-                prompt=prompt,
-                preprocessed_prompt=preprocessed_prompt,
-                rejection_reason=f"Groq response was not valid JSON: {exc}",
-                spacy_enabled=spacy_enabled,
-                candidates_count=candidates_count,
-            )
-        except (GroqConfigError, GroqAPIError, GroqTimeoutError, GroqRateLimitError) as exc:
-            return self._make_error_result(
-                request_id, prompt, preprocessed_prompt, spacy_enabled, candidates_count,
-                reason=f"Groq API error: {exc}",
-            )
-
-        validated_model = val_result.validated_model
-        assert validated_model is not None
-
-        # Independently compute complexity -- NEVER use anything Groq said about complexity
-        complexity = complexity_service.compute_from_groq_response(validated_model)
-
-        if complexity.exceeds_ceiling:
-            logger.warning(
-                "Fresh generation: complexity ceiling exceeded (score=%.2f) -- "
-                "rejecting pre-render. Reason: %s",
-                complexity.score,
-                complexity.rejection_reason,
-            )
-            return GenerationResult(
-                request_id=request_id,
-                status="rejected_complexity",
-                source="fresh",
-                prompt=prompt,
-                preprocessed_prompt=preprocessed_prompt,
-                diagram_type=validated_model.diagram_type,
-                structured_json=None,   # do NOT store oversized JSON
+                diagram_type=render_res.diagram_type or validated_model.diagram_type,
+                structured_json=validated_model.to_dict(),
                 complexity=complexity,
-                rejection_reason=complexity.rejection_reason,
+                renderer=render_res.renderer,
+                dsl_code=render_res.dsl_code,
+                svg_content=render_res.svg_content,
                 spacy_enabled=spacy_enabled,
                 candidates_count=candidates_count,
             )
 
-        # Sprint 3: Compile and render diagram via Kroki
-        render_res = rendering_service.render_diagram(validated_model.to_dict())
-
+        # Retry budget exhausted
+        logger.warning(
+            "Request_id=%s failed validation after %d repair attempts. Last error: %s",
+            request_id,
+            max_attempts,
+            last_error_summary,
+        )
         return GenerationResult(
             request_id=request_id,
-            status="validated",
+            status="failed_validation",
             source="fresh",
             prompt=prompt,
             preprocessed_prompt=preprocessed_prompt,
-            diagram_type=render_res.diagram_type or validated_model.diagram_type,
-            structured_json=validated_model.to_dict(),
-            complexity=complexity,
-            renderer=render_res.renderer,
-            dsl_code=render_res.dsl_code,
-            svg_content=render_res.svg_content,
+            validation_errors=[entry["error"] for entry in repair_history],
+            rejection_reason=f"Failed validation after {max_attempts} repair attempts. Reason: {last_error_summary}",
             spacy_enabled=spacy_enabled,
             candidates_count=candidates_count,
         )
+
+    @staticmethod
+    def _validate_svg_xml(svg_content: Optional[str]) -> tuple[bool, str]:
+        """
+        Validate SVG XML string for non-zero content, proper XML parsing, and root svg tag.
+        """
+        if not svg_content or len(svg_content.strip()) < 50:
+            return False, "SVG content is empty or under minimum byte threshold (50 bytes)"
+
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.fromstring(svg_content)
+            if not root.tag.endswith("svg"):
+                return False, f"Expected top-level <svg> tag, got <{root.tag}>"
+        except ET.ParseError as exc:
+            return False, f"SVG XML parse error: {exc}"
+
+        return True, ""
+
 
     # ---- Persistence -------------------------------------------------------
 
