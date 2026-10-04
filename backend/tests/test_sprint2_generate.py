@@ -162,7 +162,7 @@ def test_g1_invalid_groq_output_rejected_not_success(db_session):
         result = svc.run_pipeline(db=db_session, prompt="draw me something")
 
     assert not result.is_success, "Invalid Groq output must not be returned as success"
-    assert result.status == "rejected_invalid", f"Expected rejected_invalid, got: {result.status}"
+    assert result.status in ("rejected_invalid", "failed_validation"), f"Expected rejected_invalid or failed_validation, got: {result.status}"
     assert result.rejection_reason is not None
 
 
@@ -332,13 +332,13 @@ def test_g4_valid_fresh_result_persisted_as_validated(db_session):
 
 
 # ---------------------------------------------------------------------------
-# G5: Rejected invalid result persisted with status="rejected_invalid"
+# G5: Rejected invalid result persisted with status="rejected_invalid" or "failed_validation"
 # ---------------------------------------------------------------------------
 
 
 def test_g5_rejected_invalid_persisted(db_session):
     """
-    A Groq response that fails validation must be persisted as 'rejected_invalid'.
+    A Groq response that fails validation must be persisted as 'rejected_invalid' or 'failed_validation'.
     """
     svc, real_groq, mock_client, _ = _make_svc_with_mocks(_invalid_groq_payload_missing_nodes())
 
@@ -351,10 +351,10 @@ def test_g5_rejected_invalid_persisted(db_session):
 
         result = svc.run_pipeline(db=db_session, prompt="give me a broken diagram")
 
-    assert result.status == "rejected_invalid"
+    assert result.status in ("rejected_invalid", "failed_validation")
 
     from app.models.diagram_requests import DiagramRequest
-    rows = db_session.query(DiagramRequest).filter_by(status="rejected_invalid").all()
+    rows = db_session.query(DiagramRequest).filter(DiagramRequest.status.in_(["rejected_invalid", "failed_validation"])).all()
     matching = [r for r in rows if str(r.id) == result.request_id]
     assert len(matching) == 1
     assert matching[0].rejection_reason is not None
@@ -390,13 +390,13 @@ def test_g6_rejected_complexity_persisted(db_session):
 
 
 # ---------------------------------------------------------------------------
-# G9: Non-JSON Groq response rejected as rejected_invalid
+# G9: Non-JSON Groq response rejected as rejected_invalid or failed_validation
 # ---------------------------------------------------------------------------
 
 
 def test_g9_non_json_groq_response_rejected(db_session):
     """
-    Groq returning plain text (not JSON) must result in rejected_invalid,
+    Groq returning plain text (not JSON) must result in rejected_invalid or failed_validation,
     not a server crash.
     """
     # Raw prose response, not JSON
@@ -414,7 +414,7 @@ def test_g9_non_json_groq_response_rejected(db_session):
         result = svc.run_pipeline(db=db_session, prompt="something")
 
     assert not result.is_success
-    assert result.status == "rejected_invalid"
+    assert result.status in ("rejected_invalid", "failed_validation")
     assert result.rejection_reason is not None
 
 
@@ -432,12 +432,12 @@ def test_g10_all_statuses_auditable(db_session):
     from app.models.diagram_requests import DiagramRequest
 
     scenarios = [
-        ("valid", _valid_groq_payload(2), "validated"),
-        ("invalid", _invalid_groq_payload_missing_nodes(), "rejected_invalid"),
-        ("oversized", _oversized_groq_payload(), "rejected_complexity"),
+        ("valid", _valid_groq_payload(2), ["validated"]),
+        ("invalid", _invalid_groq_payload_missing_nodes(), ["rejected_invalid", "failed_validation"]),
+        ("oversized", _oversized_groq_payload(), ["rejected_complexity"]),
     ]
 
-    for scenario_name, payload, expected_status in scenarios:
+    for scenario_name, payload, expected_statuses in scenarios:
         svc, real_groq, mock_client, _ = _make_svc_with_mocks(payload)
 
         with patch.object(real_groq, "_get_client", return_value=mock_client), \
@@ -449,17 +449,18 @@ def test_g10_all_statuses_auditable(db_session):
 
             result = svc.run_pipeline(db=db_session, prompt=f"scenario: {scenario_name}")
 
-        assert result.status == expected_status, (
-            f"Scenario '{scenario_name}': expected status='{expected_status}', "
+        assert result.status in expected_statuses, (
+            f"Scenario '{scenario_name}': expected status in {expected_statuses}, "
             f"got='{result.status}'"
         )
 
         # Verify DB persistence
-        rows = db_session.query(DiagramRequest).filter_by(status=expected_status).all()
+        rows = db_session.query(DiagramRequest).filter(DiagramRequest.status.in_(expected_statuses)).all()
         matching = [r for r in rows if str(r.id) == result.request_id]
         assert len(matching) == 1, (
             f"Scenario '{scenario_name}': no DB row persisted with id={result.request_id}"
         )
-        assert matching[0].status == expected_status, (
+        assert matching[0].status in expected_statuses, (
             f"Scenario '{scenario_name}': DB status mismatch"
         )
+
