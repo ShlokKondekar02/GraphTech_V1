@@ -91,7 +91,7 @@ class GenerateRequest(BaseModel):
 
 class GenerateResponse(BaseModel):
     """
-    Response from POST /api/diagrams/generate.
+    Response from POST /api/diagrams/generate (Sprint 2 + Sprint 3).
 
     Key design decisions:
     - success=True only when status is "validated" or "cache_reused".
@@ -99,8 +99,7 @@ class GenerateResponse(BaseModel):
     - complexity contains the INDEPENDENTLY COMPUTED metrics (never Groq's
       self-reported value).
     - rejection_reason is always populated when success=False.
-    - This response has no rendering fields (svgContent, dslCode, renderer) --
-      those are Sprint 3.
+    - Includes rendered SVG markup, compiled DSL, and chosen renderer (Sprint 3).
     """
 
     request_id: str                                  = Field(..., description="UUID of the persisted diagram_requests row")
@@ -118,5 +117,34 @@ class GenerateResponse(BaseModel):
     validation_errors: List[str]                     = Field(default_factory=list, description="Validation error details (on rejection)")
     rejection_reason: Optional[str]                  = Field(None, description="Human-readable rejection reason")
 
+    # Sprint 3 Rendering fields
+    renderer: Optional[str]                          = Field(None, description="Renderer format: mermaid | plantuml | graphviz")
+    dsl_code: Optional[str]                          = Field(None, description="Compiled DSL code (Mermaid, PlantUML, or Graphviz DOT)")
+    svg_content: Optional[str]                       = Field(None, description="Rendered SVG markup string from Kroki")
+    dslCode: Optional[str]                           = Field(None, description="CamelCase alias for frontend compatibility")
+    svgContent: Optional[str]                        = Field(None, description="CamelCase alias for frontend compatibility")
+
     spacy_enabled: bool                              = Field(..., description="Whether spaCy preprocessing ran")
     candidates_count: int                            = Field(..., description="Number of similarity candidates found above threshold")
+
+
+# ---- Sprint 3: On-Demand Rendering -------------------------------------------
+
+
+class RenderDiagramRequest(BaseModel):
+    """Input for POST /api/diagrams/render."""
+
+    structured_json: Dict[str, Any]                  = Field(..., description="Validated graph structure to compile and render")
+    preferred_renderer: Optional[str]                = Field(None, description="Optional override renderer (mermaid | plantuml | graphviz)")
+
+
+class RenderDiagramResponse(BaseModel):
+    """Response from POST /api/diagrams/render."""
+
+    renderer: str                                    = Field(..., description="Renderer format: mermaid | plantuml | graphviz")
+    diagram_type: str                                = Field(..., description="Detected or specified diagram type")
+    dsl_code: str                                    = Field(..., description="Compiled DSL code")
+    svg_content: str                                 = Field(..., description="Rendered SVG markup")
+    dslCode: str                                     = Field(..., description="CamelCase alias for frontend")
+    svgContent: str                                  = Field(..., description="CamelCase alias for frontend")
+
