@@ -121,7 +121,7 @@ class ValidationService:
             )
 
         try:
-            model = GroqDiagramResponse.model_validate(raw)
+            model = GroqDiagramResponse.parse_payload(raw)
         except ValidationError as exc:
             errors = [
                 f"{' -> '.join(str(loc) for loc in e['loc'])}: {e['msg']}"
@@ -189,10 +189,38 @@ class ValidationService:
             )
             return ValidationResult(is_valid=False, errors=errors, layer="graph")
 
+        # R3: Graph Cleanup -- prune duplicate edges and unintentional self-loops
+        self._prune_and_clean_edges(model)
+
         logger.debug("Layer 2 (graph rules) passed.")
         return ValidationResult(is_valid=True, validated_model=model)
 
     # ---- Helpers -----------------------------------------------------------
+
+    @staticmethod
+    def _prune_and_clean_edges(model: GroqDiagramResponse) -> None:
+        """
+        Prune duplicate directed edges between the same source and target,
+        and eliminate unintentional self-loops unless the diagram type is state_machine.
+        """
+        cleaned_edges = []
+        seen_triples = set()
+
+        for edge in model.edges:
+            # Self-loops allowed only for state_machine
+            if edge.source == edge.target and model.diagram_type != "state_machine":
+                logger.info("Pruning self-loop edge '%s' (%s -> %s)", edge.id, edge.source, edge.target)
+                continue
+
+            triple = (edge.source, edge.target, edge.label.strip().lower())
+            if triple in seen_triples:
+                logger.info("Pruning duplicate edge '%s' (%s -> %s)", edge.id, edge.source, edge.target)
+                continue
+
+            seen_triples.add(triple)
+            cleaned_edges.append(edge)
+
+        model.edges = cleaned_edges
 
     @staticmethod
     def _find_isolated_nodes(model: GroqDiagramResponse) -> List[str]:
