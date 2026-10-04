@@ -22,6 +22,8 @@ from app.schemas.diagrams import (
     GenerateResponse,
     PrepareRequest,
     PrepareResponse,
+    RenderDiagramRequest,
+    RenderDiagramResponse,
 )
 from app.services.embedding_service import (
     EmbeddingAPIError,
@@ -32,6 +34,7 @@ from app.services.embedding_service import (
 )
 from app.services.generation_service import generation_service
 from app.services.preprocessing_service import build_preprocessor
+from app.services.rendering_service import rendering_service
 
 logger = logging.getLogger(__name__)
 
@@ -185,13 +188,13 @@ async def generate_diagram(
     db: Session = Depends(get_db),
 ) -> GenerateResponse:
     """
-    Sprint 2 pipeline:
+    Sprint 2 + Sprint 3 pipeline:
 
     1. spaCy preprocessing (optional)
     2. Voyage embedding + pgvector similarity search
-    3. Cache hit -> re-validate + complexity check -> return (or fall through)
-    4. Cache miss -> Groq call -> validate -> complexity check -> persist
-    5. Return structured result (never render -- that is Sprint 3)
+    3. Cache hit -> re-validate + complexity check -> render -> return
+    4. Cache miss -> Groq call -> validate -> complexity check -> render -> persist
+    5. Return structured result + compiled DSL + rendered SVG (Sprint 3)
     """
     result = generation_service.run_pipeline(
         db=db,
@@ -214,7 +217,50 @@ async def generate_diagram(
         similarity_score=result.similarity_score,
         validation_errors=result.validation_errors if not result.is_success else [],
         rejection_reason=result.rejection_reason,
+        renderer=result.renderer,
+        dsl_code=result.dsl_code,
+        svg_content=result.svg_content,
+        dslCode=result.dsl_code,
+        svgContent=result.svg_content,
         spacy_enabled=result.spacy_enabled,
         candidates_count=result.candidates_count,
         success=result.is_success,
     )
+
+
+# ------------------------------------------------------------------------------
+# POST /api/diagrams/render  (Sprint 3 on-demand rendering)
+# ------------------------------------------------------------------------------
+
+
+@router.post(
+    "/render",
+    response_model=RenderDiagramResponse,
+    summary="Compile structured JSON into DSL and render SVG via Kroki",
+    description=(
+        "Takes a validated structured diagram JSON and deterministically compiles "
+        "it into the optimal DSL (Mermaid, PlantUML, or Graphviz DOT), renders it "
+        "via Kroki, and returns the SVG markup alongside the DSL code."
+    ),
+    status_code=status.HTTP_200_OK,
+)
+async def render_diagram_endpoint(
+    body: RenderDiagramRequest,
+) -> RenderDiagramResponse:
+    """
+    On-demand compilation and rendering endpoint.
+    """
+    render_res = rendering_service.render_diagram(
+        structured_json=body.structured_json,
+        preferred_renderer=body.preferred_renderer,
+    )
+
+    return RenderDiagramResponse(
+        renderer=render_res.renderer,
+        diagram_type=render_res.diagram_type,
+        dsl_code=render_res.dsl_code,
+        svg_content=render_res.svg_content,
+        dslCode=render_res.dsl_code,
+        svgContent=render_res.svg_content,
+    )
+
