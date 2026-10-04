@@ -52,6 +52,8 @@ class DiagramRequest(Base):
 
     # ---- Pipeline metadata -------------------------------------------------
     renderer = Column(String(50), nullable=True)            # set in Sprint 3
+    dsl_code = Column(Text, nullable=True)                  # set in Sprint 3
+    svg_content = Column(Text, nullable=True)               # set in Sprint 3
     source = Column(String(20), nullable=True)              # "fresh" | "cache"
     status = Column(String(50), default="pending", nullable=False, index=True)
     rejection_reason = Column(Text, nullable=True)          # non-null on rejection
