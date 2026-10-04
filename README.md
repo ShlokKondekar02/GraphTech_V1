@@ -20,9 +20,9 @@ The AI pipeline is a **reuse-first architecture**: every prompt is embedded with
 | :--- | :---: | :--- |
 | **Sprint 0** — Foundations | ✅ **Done** | FastAPI skeleton, Google OAuth, real Postgres + pgvector, session handling, Alembic migrations |
 | **Sprint 1** — Embeddings & Similarity Search | ✅ **Done** | Voyage AI embeddings, pgvector HNSW index, `/api/diagrams/prepare`, spaCy preprocessing, DB seed |
-| **Sprint 2** — Groq Generation & Validation | 🔜 Next | Groq structured JSON, Pydantic validation, complexity scoring |
-| **Sprint 3** — Renderer Selection | ⬜ Planned | Mermaid, PlantUML, Graphviz, Schemdraw compilers |
-| **Sprint 4** — Output Validation & Repair | ⬜ Planned | SVG reconciliation, auto-repair loop |
+| **Sprint 2** — Groq Generation & Validation | ✅ **Done** | Groq structured JSON, Pydantic validation, complexity scoring |
+| **Sprint 3** — Renderer Selection & Kroki | ✅ **Done** | Deterministic compilers (Mermaid, PlantUML, Graphviz), Kroki rendering engine, SVG/DSL persistence |
+| **Sprint 4** — Output Validation & Repair | 🔜 Next | SVG reconciliation, auto-repair loop |
 | **Sprint 5** — Frontend Full Wiring | ⬜ Planned | Real SSE pipeline events, history UI, OAuth persistence |
 | **Sprint 6** — Gemini Path & Hardening | ⬜ Planned | Creative image path, rate limiting, circuit breakers |
 
