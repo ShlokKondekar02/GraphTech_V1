@@ -164,7 +164,19 @@ export function App() {
       ]);
 
       if (!res.success) {
-        throw new Error(res.rejection_reason || 'Diagram generation was rejected by validation engine.');
+        setIsGenerating(false);
+        const rejectionReason = res.rejection_reason || 'Diagram generation was rejected by validation engine.';
+        const rejectionMsg = {
+          id: `ai-${Date.now()}`,
+          sender: 'ai',
+          text: res.status === 'rejected_out_of_scope'
+            ? `⚠️ **Domain Scope Notice**\n\n${rejectionReason}`
+            : `❌ **Pipeline Rejection** (${res.status})\n\n${rejectionReason}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isRejection: true,
+        };
+        setMessages((prev) => [...prev, rejectionMsg]);
+        return;
       }
 
       const generated = {
