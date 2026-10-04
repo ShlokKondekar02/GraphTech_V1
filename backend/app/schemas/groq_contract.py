@@ -101,6 +101,68 @@ def _validate_id(v: str, field_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+NODE_TYPE_SYNONYMS: Dict[str, str] = {
+    "postgres": "database",
+    "postgresql": "database",
+    "mysql": "database",
+    "sqlite": "database",
+    "rdbms": "database",
+    "datastore": "database",
+    "db": "database",
+    "mongodb": "database",
+    "dynamodb": "database",
+    "sql": "database",
+    "redis": "cache",
+    "memcached": "cache",
+    "kafka": "queue",
+    "rabbitmq": "queue",
+    "sqs": "queue",
+    "event_bus": "queue",
+    "pubsub": "queue",
+    "stream": "queue",
+    "rest_api": "service",
+    "microservice": "service",
+    "web_app": "service",
+    "backend": "service",
+    "service_node": "service",
+    "api_gateway": "gateway",
+    "lb": "gateway",
+    "load_balancer": "gateway",
+    "proxy": "gateway",
+    "ingress": "gateway",
+    "user": "actor",
+    "end_user": "actor",
+    "client_app": "actor",
+    "browser": "actor",
+    "table": "entity",
+    "schema_entity": "entity",
+}
+
+EDGE_TYPE_SYNONYMS: Dict[str, str] = {
+    "http_post": "calls",
+    "http_get": "calls",
+    "api_call": "calls",
+    "rest_call": "calls",
+    "sync_call": "calls",
+    "rpc": "calls",
+    "has_many": "one_to_many",
+    "belongs_to": "one_to_many",
+    "1_to_many": "one_to_many",
+    "1_n": "one_to_many",
+    "many_to_many": "many_to_many",
+    "n_m": "many_to_many",
+    "m_n": "many_to_many",
+    "one_to_one": "one_to_one",
+    "1_to_1": "one_to_one",
+    "1_1": "one_to_one",
+    "next_state": "transitions_to",
+    "moves_to": "transitions_to",
+    "extends": "inherits",
+    "inherits_from": "inherits",
+    "is_a": "inherits",
+}
+
+
 class NodeObject(BaseModel):
     """A single node in the diagram."""
 
@@ -126,7 +188,8 @@ class NodeObject(BaseModel):
     def type_not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("node.type must not be blank")
-        return v
+        cleaned = v.strip().lower()
+        return NODE_TYPE_SYNONYMS.get(cleaned, cleaned)
 
 
 class EdgeObject(BaseModel):
@@ -158,7 +221,8 @@ class EdgeObject(BaseModel):
     def type_not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("edge.type must not be blank")
-        return v
+        cleaned = v.strip().lower()
+        return EDGE_TYPE_SYNONYMS.get(cleaned, cleaned)
 
 
 class DiagramAttributes(BaseModel):
@@ -289,3 +353,112 @@ class GroqDiagramResponse(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dict suitable for JSONB storage."""
         return self.model_dump(mode="json")
+
+    @classmethod
+    def parse_payload(cls, raw: Dict[str, Any]) -> GroqDiagramResponse:
+        """
+        Parse raw dict into the appropriate specialized diagram schema subclass.
+        """
+        dtype = raw.get("diagram_type", "generic")
+        schema_cls = DIAGRAM_SCHEMA_MAP.get(dtype, GenericDiagramResponse)
+        return schema_cls.model_validate(raw)
+
+
+# ---------------------------------------------------------------------------
+# Specialized Diagram Schemas (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class ErdDiagramResponse(GroqDiagramResponse):
+    """Specialized schema for Entity Relationship Diagrams (ERD)."""
+
+    diagram_type: Literal["erd"] = "erd"
+
+    @model_validator(mode="after")
+    def validate_erd_relationships(self) -> "ErdDiagramResponse":
+        allowed = {"one_to_many", "many_to_many", "one_to_one", "calls", "generic", "depends_on", "inherits"}
+        for edge in self.edges:
+            if edge.type not in allowed:
+                edge.type = "one_to_many"
+        for node in self.nodes:
+            if node.type in {"generic", "service", "actor"}:
+                node.type = "entity"
+        return self
+
+
+class SequenceDiagramResponse(GroqDiagramResponse):
+    """Specialized schema for Sequence Diagrams."""
+
+    diagram_type: Literal["sequence"] = "sequence"
+
+    @model_validator(mode="after")
+    def validate_sequence_interactions(self) -> "SequenceDiagramResponse":
+        allowed_edges = {"calls", "sync", "async", "reply", "returns", "depends_on", "generic"}
+        for edge in self.edges:
+            if edge.type not in allowed_edges:
+                edge.type = "calls"
+        return self
+
+
+class ClassDiagramResponse(GroqDiagramResponse):
+    """Specialized schema for UML Class Diagrams."""
+
+    diagram_type: Literal["class"] = "class"
+
+    @model_validator(mode="after")
+    def validate_class_relationships(self) -> "ClassDiagramResponse":
+        allowed_edges = {"inherits", "implements", "associates", "aggregates", "composes", "calls", "one_to_many", "one_to_one", "generic"}
+        for edge in self.edges:
+            if edge.type not in allowed_edges:
+                edge.type = "inherits"
+        for node in self.nodes:
+            if node.type in {"generic", "service"}:
+                node.type = "class"
+        return self
+
+
+class StateMachineResponse(GroqDiagramResponse):
+    """Specialized schema for State Machine Diagrams."""
+
+    diagram_type: Literal["state_machine"] = "state_machine"
+
+    @model_validator(mode="after")
+    def validate_state_machine_nodes(self) -> "StateMachineResponse":
+        for node in self.nodes:
+            if node.type in {"generic", "service"}:
+                node.type = "state"
+        return self
+
+
+class NetworkDiagramResponse(GroqDiagramResponse):
+    """Specialized schema for Network & Infrastructure Diagrams (nwdiag)."""
+
+    diagram_type: Literal["network"] = "network"
+
+    @model_validator(mode="after")
+    def validate_network_nodes(self) -> "NetworkDiagramResponse":
+        for node in self.nodes:
+            if node.type in {"generic"}:
+                node.type = "server"
+        return self
+
+
+class GenericDiagramResponse(GroqDiagramResponse):
+    """Generic schema for flowcharts, architecture, mindmaps, gantt, etc."""
+
+    diagram_type: DiagramType = "generic"
+
+
+DIAGRAM_SCHEMA_MAP: Dict[str, type[GroqDiagramResponse]] = {
+    "erd": ErdDiagramResponse,
+    "sequence": SequenceDiagramResponse,
+    "class": ClassDiagramResponse,
+    "state_machine": StateMachineResponse,
+    "network": NetworkDiagramResponse,
+    "flowchart": GenericDiagramResponse,
+    "architecture": GenericDiagramResponse,
+    "mindmap": GenericDiagramResponse,
+    "gantt": GenericDiagramResponse,
+    "generic": GenericDiagramResponse,
+}
+
