@@ -124,6 +124,12 @@ class GenerateResponse(BaseModel):
     dslCode: Optional[str]                           = Field(None, description="CamelCase alias for frontend compatibility")
     svgContent: Optional[str]                        = Field(None, description="CamelCase alias for frontend compatibility")
 
+    # Sprint 4 Repair & Output Validation fields
+    attempt_count: int                               = Field(1, description="Number of attempts (1 = clean pass, >1 = repaired)")
+    validation_status: Optional[str]                 = Field(None, description="Output validation status: validated | auto_repaired | output_validation_failed")
+    repair_history: List[Dict[str, Any]]             = Field(default_factory=list, description="Audit log of repair attempts")
+    validation_details: Optional[Dict[str, Any]]     = Field(None, description="Detailed XML and semantic reconciliation metrics")
+
     spacy_enabled: bool                              = Field(..., description="Whether spaCy preprocessing ran")
     candidates_count: int                            = Field(..., description="Number of similarity candidates found above threshold")
 
