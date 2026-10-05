@@ -93,29 +93,43 @@ class RenderingService:
         detected_type, default_renderer = renderer_detector.select_renderer(structured_json)
         renderer = preferred_renderer or default_renderer
 
-        # 1. Deterministic compilation AST -> DSL
+        # Fallback chain for renderer switching
+        fallback_renderers = [renderer]
+        for alt in ["mermaid", "graphviz", "plantuml"]:
+            if alt not in fallback_renderers:
+                fallback_renderers.append(alt)
+
+        last_exc: Optional[Exception] = None
+        for current_renderer in fallback_renderers:
+            try:
+                dsl_code = self.compile_dsl(structured_json, current_renderer)
+                logger.info(
+                    "Compiled DSL for type=%s renderer=%s (dsl_len=%d)",
+                    detected_type,
+                    current_renderer,
+                    len(dsl_code),
+                )
+                svg_content = self.client.render_sync(renderer=current_renderer, dsl_code=dsl_code)
+                return RenderResult(
+                    renderer=current_renderer,
+                    diagram_type=detected_type,
+                    dsl_code=dsl_code,
+                    svg_content=svg_content,
+                )
+            except (KrokiConnectionError, KrokiTimeoutError) as exc:
+                logger.warning(
+                    "Kroki connection/timeout failure on renderer %s (%s). Trying fallback if available.",
+                    current_renderer,
+                    exc,
+                )
+                last_exc = exc
+            except KrokiRenderError as exc:
+                logger.error("Kroki failed to render DSL with renderer %s: %s", current_renderer, exc)
+                last_exc = exc
+
+        # If all renderers fail, generate fallback safe preview SVG
         dsl_code = self.compile_dsl(structured_json, renderer)
-        logger.info(
-            "Compiled DSL for type=%s renderer=%s (dsl_len=%d)",
-            detected_type,
-            renderer,
-            len(dsl_code),
-        )
-
-        # 2. Render via Kroki
-        try:
-            svg_content = self.client.render_sync(renderer=renderer, dsl_code=dsl_code)
-        except (KrokiConnectionError, KrokiTimeoutError) as exc:
-            logger.warning(
-                "Kroki connection/timeout failure (%s). Generating fallback SVG.",
-                exc,
-            )
-            svg_content = self._generate_fallback_svg(structured_json, renderer, str(exc))
-        except KrokiRenderError as exc:
-            logger.error("Kroki failed to render DSL: %s", exc)
-            # Try fallback to graphviz or mermaid if plantuml failed, or generate fallback SVG
-            svg_content = self._generate_fallback_svg(structured_json, renderer, str(exc))
-
+        svg_content = self._generate_fallback_svg(structured_json, renderer, str(last_exc or "Render failure"))
         return RenderResult(
             renderer=renderer,
             diagram_type=detected_type,
