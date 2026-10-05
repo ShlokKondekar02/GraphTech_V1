@@ -507,29 +507,54 @@ class GenerationService:
             if result.validation_errors and not rejection_reason_text:
                 rejection_reason_text = "; ".join(result.validation_errors[:5])
 
-            row = DiagramRequest(
-                id=uuid.UUID(result.request_id),
-                user_id=uuid.UUID(user_id) if user_id else None,
-                prompt=result.prompt,
-                structured_json=result.structured_json,
-                complexity=result.complexity.label if result.complexity else None,
-                diagram_type=result.diagram_type,
-                status=result.status,
-                rejection_reason=rejection_reason_text,
-                complexity_score=result.complexity.score if result.complexity else None,
-                complexity_metrics=(
-                    result.complexity.to_dict() if result.complexity else None
-                ),
-                source=result.source,
-                renderer=result.renderer,
-                dsl_code=result.dsl_code,
-                svg_content=result.svg_content,
-                attempt_count=result.attempt_count,
-                validation_status=result.validation_status or result.status,
-                repair_history=result.repair_history if result.repair_history else None,
-            )
-            db.add(row)
-            db.commit()
+            try:
+                row = DiagramRequest(
+                    id=uuid.UUID(result.request_id),
+                    user_id=uuid.UUID(user_id) if user_id else None,
+                    prompt=result.prompt,
+                    structured_json=result.structured_json,
+                    complexity=result.complexity.label if result.complexity else None,
+                    diagram_type=result.diagram_type,
+                    status=result.status,
+                    rejection_reason=rejection_reason_text,
+                    complexity_score=result.complexity.score if result.complexity else None,
+                    complexity_metrics=(
+                        result.complexity.to_dict() if result.complexity else None
+                    ),
+                    source=result.source,
+                    renderer=result.renderer,
+                    dsl_code=result.dsl_code,
+                    svg_content=result.svg_content,
+                    attempt_count=result.attempt_count,
+                    validation_status=result.validation_status or result.status,
+                    repair_history=result.repair_history if result.repair_history else None,
+                )
+                db.add(row)
+                db.commit()
+            except Exception as first_exc:
+                db.rollback()
+                logger.warning("Full persistence failed (%s). Attempting legacy fallback persistence.", first_exc)
+                row_legacy = DiagramRequest(
+                    id=uuid.UUID(result.request_id),
+                    user_id=uuid.UUID(user_id) if user_id else None,
+                    prompt=result.prompt,
+                    structured_json=result.structured_json,
+                    complexity=result.complexity.label if result.complexity else None,
+                    diagram_type=result.diagram_type,
+                    status=result.status,
+                    rejection_reason=rejection_reason_text,
+                    complexity_score=result.complexity.score if result.complexity else None,
+                    complexity_metrics=(
+                        result.complexity.to_dict() if result.complexity else None
+                    ),
+                    source=result.source,
+                    renderer=result.renderer,
+                    dsl_code=result.dsl_code,
+                    svg_content=result.svg_content,
+                )
+                db.add(row_legacy)
+                db.commit()
+
             logger.info(
                 "Persisted diagram_request id=%s status=%s source=%s",
                 result.request_id,
