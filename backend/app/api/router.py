@@ -3,6 +3,8 @@ from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.me import router as me_router
 from app.api.diagrams import router as diagrams_router
+from app.api.history import router as history_router
+from app.api.chat import router as chat_router
 
 api_router = APIRouter(prefix="/api")
 
@@ -10,3 +12,5 @@ api_router.include_router(health_router)
 api_router.include_router(auth_router)
 api_router.include_router(me_router)
 api_router.include_router(diagrams_router)
+api_router.include_router(history_router)
+api_router.include_router(chat_router)
