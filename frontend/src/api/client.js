@@ -108,3 +108,125 @@ export async function generateDiagram(prompt) {
 
   return response.json();
 }
+
+// ── Sprint 5: Async Jobs, History & Chat Q&A ──────────────────────────────────
+
+/**
+ * Start async diagram generation job.
+ * @param {string} prompt
+ * @returns {Promise<{job_id: string, status: string, poll_url: string}>}
+ */
+export async function generateDiagramAsync(prompt) {
+  const response = await fetch(`${API_BASE_URL}/api/diagrams/generate-async`, {
+    ...defaultOptions,
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.detail || errorData.rejection_reason || `Async generation failed: ${response.status}`;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
+ * Poll job status and stage progress.
+ * @param {string} jobId
+ * @returns {Promise<object>}
+ */
+export async function getJobStatus(jobId) {
+  const response = await fetch(`${API_BASE_URL}/api/diagrams/${jobId}/status`, defaultOptions);
+  if (!response.ok) {
+    throw new Error(`Job status poll failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetch persisted user diagram history from backend database.
+ * @returns {Promise<Array>}
+ */
+export async function getHistory() {
+  const response = await fetch(`${API_BASE_URL}/api/history`, defaultOptions);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch history: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetch single diagram history detail.
+ * @param {string} id
+ * @returns {Promise<object>}
+ */
+export async function getHistoryItem(id) {
+  const response = await fetch(`${API_BASE_URL}/api/history/${id}`, defaultOptions);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch history item: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Delete a diagram request from persistent history.
+ * @param {string} id
+ * @returns {Promise<object>}
+ */
+export async function deleteHistoryItem(id) {
+  const response = await fetch(`${API_BASE_URL}/api/history/${id}`, {
+    ...defaultOptions,
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete history item: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Send Diagram-Aware conversational chat message.
+ * @param {string} message
+ * @param {object|null} diagramContext
+ * @returns {Promise<{reply: string, diagram_aware: boolean, context_referenced: string|null}>}
+ */
+export async function sendChatMessage(message, diagramContext = null) {
+  const response = await fetch(`${API_BASE_URL}/api/chat/message`, {
+    ...defaultOptions,
+    method: 'POST',
+    body: JSON.stringify({ message, diagram_context: diagramContext }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Chat request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Upload reference text/code file for prompt context extraction.
+ * @param {File} file
+ * @returns {Promise<{success: boolean, filename: string, extracted_text: string}>}
+ */
+export async function uploadReferenceFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/diagrams/upload-reference`, {
+    credentials: 'include',
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Reference file upload failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
