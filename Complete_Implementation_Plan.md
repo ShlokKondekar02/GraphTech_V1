@@ -367,7 +367,7 @@ trusted blindly.
     after burning render time.
 
 **Sprint 3 --- Diagram-Type Detection, Renderer Selection, and
-Deterministic Rendering (via Kroki)**
+Deterministic Rendering (via Kroki) [COMPLETED]**
 
 **Sprint goal:** Turn validated structured JSON into an actual visual image (SVG),
 choosing the right diagram renderer deterministically and compiling via Kroki's
@@ -415,7 +415,7 @@ unified open-source rendering engine (supporting Mermaid, PlantUML, Graphviz DOT
     is deterministically compiled and rendered into a valid SVG via Kroki, visible in the
     frontend DiagramViewer.
 
-**Sprint 4 --- Output Validation and Bounded Repair Loop**
+**Sprint 4 --- Output Validation and Bounded Repair Loop [COMPLETED]**
 
 **Sprint goal:** Stop trusting \"an image was produced\" as proof of
 correctness; add the repair loop.
@@ -458,7 +458,7 @@ correctness; add the repair loop.
     UI --- never as a false \"Validated ✓.\"
 
 **Sprint 5 --- Frontend Wiring, Real Pipeline Progress, and Persistent
-History**
+History [COMPLETED]**
 
 **Sprint goal:** Retire every remaining mock in the frontend and connect
 the full user journey end-to-end.
