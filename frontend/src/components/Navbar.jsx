@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, PanelLeft, Home, LogOut } from 'lucide-react';
+import { Network, PanelLeft, LogOut } from 'lucide-react';
 
 export function Navbar({ 
   onToggleSidebar, 
@@ -41,25 +41,9 @@ export function Navbar({
             <span className="navbar-badge">Research Preview</span>
           </div>
         </button>
-
-        {/* Dedicated Discover / Home Icon Button */}
-        <button
-          type="button"
-          className={`navbar-btn-home ${isDiscoverPage ? 'active' : ''}`}
-          onClick={onGoDiscover}
-          title="Return to Discover / Home"
-        >
-          <Home size={14} />
-          <span>Home</span>
-        </button>
       </div>
 
       <div className="navbar-actions">
-        <div className="nav-status">
-          <span className="status-dot" />
-          <span>Pipeline Online</span>
-        </div>
-
         {/* Auth Buttons or User Profile */}
         {!isLoggedIn ? (
           <div className="nav-auth-group">
