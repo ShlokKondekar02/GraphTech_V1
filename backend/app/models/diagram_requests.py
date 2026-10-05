@@ -18,11 +18,14 @@ Status vocabulary (status column):
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Float
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Float, Integer, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from app.models.base import Base
+
+# Cross-database JSON type (PostgreSQL JSONB, SQLite JSON)
+JSONType = JSONB().with_variant(JSON, "sqlite")
 
 
 class DiagramRequest(Base):
@@ -42,13 +45,13 @@ class DiagramRequest(Base):
     embedding = Column(Vector(1024), nullable=True)
 
     # ---- Structured output -------------------------------------------------
-    structured_json = Column(JSONB, nullable=True)
+    structured_json = Column(JSONType, nullable=True)
     diagram_type = Column(String(50), nullable=True)
 
     # ---- Complexity (always independently computed -- NEVER from Groq) -----
     complexity = Column(String(50), nullable=True)         # label bucket
     complexity_score = Column(Float, nullable=True)         # raw float score
-    complexity_metrics = Column(JSONB, nullable=True)       # full metrics dict
+    complexity_metrics = Column(JSONType, nullable=True)     # full metrics dict
 
     # ---- Pipeline metadata -------------------------------------------------
     renderer = Column(String(50), nullable=True)            # set in Sprint 3
@@ -58,6 +61,11 @@ class DiagramRequest(Base):
     status = Column(String(50), default="pending", nullable=False, index=True)
     rejection_reason = Column(Text, nullable=True)          # non-null on rejection
     output_path = Column(String(1024), nullable=True)       # set in Sprint 3
+
+    # ---- Sprint 4 Output Validation & Repair Metadata -----------------------
+    attempt_count = Column(Integer, default=1, nullable=False)
+    validation_status = Column(String(50), nullable=True)   # "validated" | "auto_repaired" | "output_validation_failed"
+    repair_history = Column(JSONType, nullable=True)         # list of attempt log dicts
 
     # ---- Timestamps --------------------------------------------------------
     created_at = Column(
