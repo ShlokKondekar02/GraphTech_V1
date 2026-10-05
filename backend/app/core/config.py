@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Groq LLM settings (Sprint 2)
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq model to use for structured JSON generation
-    GROQ_TIMEOUT_SECONDS: float = 30.0
+    GROQ_TIMEOUT_SECONDS: float = 60.0
     GROQ_MAX_RETRIES: int = 3
 
     # Complexity ceiling (Sprint 2)
