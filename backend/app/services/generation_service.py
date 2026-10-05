@@ -58,6 +58,7 @@ from app.services.embedding_service import (
     SimilarityCandidate,
     embedding_service,
 )
+from app.services.output_validator_service import output_validator_service
 from app.services.preprocessing_service import build_preprocessor
 from app.services.rendering_service import rendering_service
 from app.services.scope_guard import scope_guard
@@ -77,22 +78,6 @@ logger = logging.getLogger(__name__)
 class GenerationResult:
     """
     The complete result of one pipeline run (reused or fresh).
-
-    Attributes
-    ----------
-    request_id          -- UUID of the persisted diagram_requests row
-    status              -- one of the status vocabulary strings
-    source              -- "fresh" or "cache"
-    prompt              -- original user prompt
-    preprocessed_prompt -- after optional spaCy stage
-    diagram_type        -- from validated structured JSON
-    structured_json     -- the validated dict (present on success only)
-    complexity          -- ComplexityResult (always computed, never from Groq)
-    similarity_score    -- cosine similarity score (only set for cache hits)
-    validation_errors   -- list of validation error strings (on rejection)
-    rejection_reason    -- human-readable reason (on rejection)
-    spacy_enabled       -- whether spaCy stage ran
-    candidates_count    -- number of similarity candidates found
     """
 
     request_id: str
@@ -109,6 +94,10 @@ class GenerationResult:
     renderer: Optional[str] = field(default=None)
     dsl_code: Optional[str] = field(default=None)
     svg_content: Optional[str] = field(default=None)
+    attempt_count: int = field(default=1)
+    validation_status: Optional[str] = field(default=None)
+    repair_history: List[Dict[str, Any]] = field(default_factory=list)
+    validation_details: Optional[Dict[str, Any]] = field(default=None)
     spacy_enabled: bool = field(default=False)
     candidates_count: int = field(default=0)
 
@@ -425,17 +414,26 @@ class GenerationService:
             # Compile and render diagram via Kroki/Compilers
             render_res = rendering_service.render_diagram(validated_model.to_dict())
 
-            # SVG XML Reconciliation Engine Check
-            svg_ok, svg_err = self._validate_svg_xml(render_res.svg_content)
-            if not svg_ok:
-                last_error_summary = f"SVG Reconciliation error: {svg_err}"
+            # SVG XML & Semantic AST Reconciliation Engine Check
+            val_out = output_validator_service.validate_svg(
+                svg_content=render_res.svg_content,
+                structured_json=validated_model.to_dict(),
+            )
+
+            if not val_out.is_valid:
+                last_error_summary = f"Output Validation Error: {val_out.error_message}"
                 import json
                 last_raw_payload = json.dumps(validated_model.to_dict())
-                repair_history.append({"attempt": attempt, "error": last_error_summary})
+                repair_history.append({
+                    "attempt": attempt,
+                    "error": last_error_summary,
+                    "details": val_out.to_dict(),
+                })
                 attempt += 1
                 continue
 
             status_str = "validated" if attempt == 0 else "auto_repaired"
+            val_status = "validated" if attempt == 0 else "auto_repaired"
             return GenerationResult(
                 request_id=request_id,
                 status=status_str,
@@ -448,6 +446,10 @@ class GenerationService:
                 renderer=render_res.renderer,
                 dsl_code=render_res.dsl_code,
                 svg_content=render_res.svg_content,
+                attempt_count=attempt + 1,
+                validation_status=val_status,
+                repair_history=repair_history,
+                validation_details=val_out.to_dict(),
                 spacy_enabled=spacy_enabled,
                 candidates_count=candidates_count,
             )
@@ -467,6 +469,9 @@ class GenerationService:
             preprocessed_prompt=preprocessed_prompt,
             validation_errors=[entry["error"] for entry in repair_history],
             rejection_reason=f"Failed validation after {max_attempts} repair attempts. Reason: {last_error_summary}",
+            attempt_count=max_attempts + 1,
+            validation_status="output_validation_failed",
+            repair_history=repair_history,
             spacy_enabled=spacy_enabled,
             candidates_count=candidates_count,
         )
@@ -475,19 +480,10 @@ class GenerationService:
     def _validate_svg_xml(svg_content: Optional[str]) -> tuple[bool, str]:
         """
         Validate SVG XML string for non-zero content, proper XML parsing, and root svg tag.
+        Backward-compatible helper wrapping output_validator_service.
         """
-        if not svg_content or len(svg_content.strip()) < 50:
-            return False, "SVG content is empty or under minimum byte threshold (50 bytes)"
-
-        import xml.etree.ElementTree as ET
-        try:
-            root = ET.fromstring(svg_content)
-            if not root.tag.endswith("svg"):
-                return False, f"Expected top-level <svg> tag, got <{root.tag}>"
-        except ET.ParseError as exc:
-            return False, f"SVG XML parse error: {exc}"
-
-        return True, ""
+        val_res = output_validator_service.validate_svg(svg_content)
+        return val_res.is_valid, val_res.error_message
 
 
     # ---- Persistence -------------------------------------------------------
@@ -528,6 +524,9 @@ class GenerationService:
                 renderer=result.renderer,
                 dsl_code=result.dsl_code,
                 svg_content=result.svg_content,
+                attempt_count=result.attempt_count,
+                validation_status=result.validation_status or result.status,
+                repair_history=result.repair_history if result.repair_history else None,
             )
             db.add(row)
             db.commit()
