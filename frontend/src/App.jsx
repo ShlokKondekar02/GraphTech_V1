@@ -1,5 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getSession, logout as apiLogout, generateDiagram } from './api/client';
+import {
+  getSession,
+  logout as apiLogout,
+  generateDiagram,
+  generateDiagramAsync,
+  getJobStatus,
+  getHistory,
+  getHistoryItem,
+  deleteHistoryItem,
+  sendChatMessage,
+  uploadReferenceFile,
+} from './api/client';
 import { Navbar } from './components/Navbar';
 import { CleanBackground } from './components/Background/CleanBackground';
 import { HistorySidebar } from './components/Sidebar/HistorySidebar';
@@ -34,8 +45,43 @@ export function App() {
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [lastGeneratedPrompt, setLastGeneratedPrompt] = useState('');
 
-  // Fullscreen Lightbox state (like ChatGPT image preview for seen or read)
+  // Fullscreen Lightbox state
   const [fullscreenDiagram, setFullscreenDiagram] = useState(null);
+
+  // ── Fetch DB Persisted User History ──────────────────────────────────────────
+  const fetchUserHistory = useCallback(async () => {
+    try {
+      const items = await getHistory();
+      if (items && Array.isArray(items) && items.length > 0) {
+        const mapped = items.map((r) => ({
+          id: r.id,
+          title: r.title || r.prompt,
+          type: r.type || r.diagram_type || 'Architecture',
+          prompt: r.prompt,
+          timestamp: r.created_at ? new Date(r.created_at).toLocaleDateString() : 'Recent',
+          diagram: {
+            id: r.id,
+            title: r.title || r.prompt,
+            type: r.diagram_type || 'Architecture',
+            complexity: typeof r.complexity === 'object' ? (r.complexity?.label || 'Moderate') : (r.complexity || 'Moderate'),
+            routing: 'Kroki Renderer',
+            renderer: r.renderer || 'Mermaid',
+            validation: r.validation_status || r.status || 'Passed',
+            status: r.status,
+            attempt_count: r.attempt_count || 1,
+            nodesCount: r.nodesCount || (r.structured_json?.nodes?.length ?? 0),
+            edgesCount: r.edgesCount || (r.structured_json?.edges?.length ?? 0),
+            dslCode: r.dslCode || r.dsl_code,
+            svgContent: r.svgContent || r.svg_content,
+            structured_json: r.structured_json,
+          }
+        }));
+        setHistory(mapped);
+      }
+    } catch (err) {
+      console.error('Failed to load user history:', err);
+    }
+  }, []);
 
   // ── Session bootstrap: check real backend session on every app load ─────────
   const hydrateSession = useCallback(async () => {
@@ -50,16 +96,15 @@ export function App() {
         setCurrentUser(null);
         setIsSidebarOpen(false);
       }
+      await fetchUserHistory();
     } catch (err) {
-      // Network error — treat as logged-out
       console.error('Session check failed:', err);
       setIsLoggedIn(false);
       setCurrentUser(null);
     }
-  }, []);
+  }, [fetchUserHistory]);
 
   useEffect(() => {
-    // On mount (including hard refresh): hydrate auth state from the real session cookie.
     hydrateSession();
   }, [hydrateSession]);
 
@@ -81,12 +126,26 @@ export function App() {
     }
   };
 
-  // Handle normal message send (does NOT generate diagram automatically, strictly conversational chat!)
-  const handleSendMessage = (text, attachment = null) => {
+  // Handle normal message send (Diagram-Aware Chat Q&A)
+  const handleSendMessage = async (text, attachment = null) => {
     if (!text?.trim() && !attachment) return;
 
     setIsInDiscoverMode(false);
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let promptText = text?.trim() || '';
+
+    // Handle reference file attachment text extraction
+    if (attachment && attachment instanceof File) {
+      try {
+        const uploadRes = await uploadReferenceFile(attachment);
+        if (uploadRes?.extracted_text) {
+          promptText += `\n\n[Reference Context from ${attachment.name}]:\n${uploadRes.extracted_text}`;
+        }
+      } catch (err) {
+        console.error('Attachment upload failed:', err);
+      }
+    }
+
     const userMsg = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -95,45 +154,62 @@ export function App() {
       attachment: attachment
     };
 
-    const query = (text || '').toLowerCase();
-    let replyText = '';
-
-    if (attachment && !text?.trim()) {
-      replyText = `Received reference picture "${attachment.name}". Analyzing visual structure... What architecture or design aspects would you like to discuss? You can chat about trade-offs or click "Generate Diagram" to synthesize the canvas.`;
-    } else if (query.includes('microservice') || query.includes('service')) {
-      replyText = `For microservices architectures, key considerations include API Gateway routing, service discovery, asynchronous event streaming (Kafka/RabbitMQ), and distributed tracing. What specific service topology or auth model would you like to explore? (Click "Generate Diagram" anytime to synthesize the canvas).`;
-    } else if (query.includes('database') || query.includes('erd') || query.includes('sql') || query.includes('schema')) {
-      replyText = `When modeling database schemas, ensuring proper normalization (3NF), defining clear foreign key constraints, indexing high-cardinality lookups, and isolating read replicas are essential. Which entities and relations are you designing?`;
-    } else if (query.includes('cloud') || query.includes('vpc') || query.includes('aws') || query.includes('network')) {
-      replyText = `For cloud network topology and VPCs, standard best practice divides subnets into public (ALB, NAT Gateways) and private isolated subnets (containers, database clusters). Would you like to review ingress/egress rules?`;
-    } else if (query.includes('workflow') || query.includes('state') || query.includes('pipeline')) {
-      replyText = `In state machine workflows, handling idempotent transitions, error retry backoffs, and dead-letter queues (DLQ) ensures reliability under high throughput. What states or triggers does your system involve?`;
-    } else {
-      replyText = `Regarding "${text.trim()}": From an architectural perspective, this involves defining component boundaries, interface protocols (REST/gRPC/GraphQL), and operational invariants. What specific technical requirements would you like to discuss?`;
-    }
-
-    const aiMsg = {
-      id: `ai-${Date.now() + 1}`,
-      sender: 'ai',
-      text: replyText,
-      timestamp: time
-    };
-
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputText('');
+
+    // Package active diagram context for Diagram-Aware Q&A
+    const activeContext = diagram ? {
+      title: diagram.title,
+      diagram_type: diagram.type,
+      renderer: diagram.renderer,
+      dsl_code: diagram.dslCode,
+      structured_json: diagram.structured_json,
+    } : null;
+
+    try {
+      const chatRes = await sendChatMessage(promptText || text, activeContext);
+      const aiMsg = {
+        id: `ai-${Date.now() + 1}`,
+        sender: 'ai',
+        text: chatRes.reply,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        diagramAware: chatRes.diagram_aware,
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      console.error('Chat API call failed:', err);
+      const fallbackMsg = {
+        id: `ai-${Date.now() + 1}`,
+        sender: 'ai',
+        text: `Regarding "${text}": GraphTech AI converts architecture prompts into deterministic AST diagrams. Click "Generate Diagram" to synthesize your visual canvas!`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, fallbackMsg]);
+    }
   };
 
-  // Run the 6-step AI generation pipeline (Sprint 3: calls real backend generate endpoint)
+  // Run the AI generation pipeline with async status polling
   const runGenerationPipeline = async (promptText, attachment = null) => {
-    const targetPrompt = promptText || inputText || lastGeneratedPrompt || 'Create a microservices architecture';
+    let targetPrompt = promptText || inputText || lastGeneratedPrompt || 'Create a microservices architecture';
+
+    if (attachment && attachment instanceof File) {
+      try {
+        const uploadRes = await uploadReferenceFile(attachment);
+        if (uploadRes?.extracted_text) {
+          targetPrompt += `\n\n[Reference Context from ${attachment.name}]:\n${uploadRes.extracted_text}`;
+        }
+      } catch (err) {
+        console.error('Reference file upload error:', err);
+      }
+    }
+
     setIsInDiscoverMode(false);
     setIsGenerating(true);
     setActiveStepIndex(0);
     setLastGeneratedPrompt(targetPrompt);
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    // Immediately append the user message so chat stream has prompt right above live pipeline
+
     const userMsg = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -144,34 +220,51 @@ export function App() {
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
 
-    // Kick off real backend generation
-    const apiPromise = generateDiagram(targetPrompt);
-
-    // 6-Stage Pipeline visual stepper animation
-    const totalSteps = 6;
-    const stepDuration = 320; // ms per step
-
-    for (let i = 0; i < totalSteps; i++) {
-      setTimeout(() => {
-        setActiveStepIndex(i);
-      }, i * stepDuration);
-    }
-
     try {
-      const [res] = await Promise.all([
-        apiPromise,
-        new Promise((resolve) => setTimeout(resolve, totalSteps * stepDuration)),
-      ]);
+      // Start async job or call generate API
+      const asyncJob = await generateDiagramAsync(targetPrompt);
+      const jobId = asyncJob.job_id;
 
-      if (!res.success) {
+      // Poll job status every 500ms until completion or failure
+      let completedJob = null;
+      let attempts = 0;
+      const maxPolls = 60; // 30 seconds max
+
+      while (attempts < maxPolls) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        attempts++;
+
+        try {
+          const statusRes = await getJobStatus(jobId);
+          setActiveStepIndex(Math.max(0, (statusRes.step_index || 1) - 1));
+
+          if (statusRes.stage === 'completed') {
+            completedJob = statusRes.result;
+            break;
+          } else if (statusRes.stage === 'failed') {
+            throw new Error(statusRes.error || statusRes.message || 'Pipeline rejected request.');
+          }
+        } catch (pollErr) {
+          if (pollErr.message.includes('rejected') || pollErr.message.includes('failed')) {
+            throw pollErr;
+          }
+        }
+      }
+
+      if (!completedJob) {
+        // Fall back to direct generate call if polling timed out
+        completedJob = await generateDiagram(targetPrompt);
+      }
+
+      if (!completedJob.success) {
         setIsGenerating(false);
-        const rejectionReason = res.rejection_reason || 'Diagram generation was rejected by validation engine.';
+        const rejectionReason = completedJob.rejection_reason || 'Diagram generation was rejected by validation engine.';
         const rejectionMsg = {
           id: `ai-${Date.now()}`,
           sender: 'ai',
-          text: res.status === 'rejected_out_of_scope'
+          text: completedJob.status === 'rejected_out_of_scope'
             ? `⚠️ **Domain Scope Notice**\n\n${rejectionReason}`
-            : `❌ **Pipeline Rejection** (${res.status})\n\n${rejectionReason}`,
+            : `❌ **Pipeline Rejection** (${completedJob.status})\n\n${rejectionReason}`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isRejection: true,
         };
@@ -180,46 +273,49 @@ export function App() {
       }
 
       const generated = {
-        id: res.request_id,
-        title: res.title || res.structured_json?.attributes?.title || targetPrompt,
-        type: res.type || res.diagram_type || 'Architecture',
-        complexity: typeof res.complexity === 'object' ? (res.complexity?.label || 'Moderate') : (res.complexity || 'Moderate'),
+        id: completedJob.request_id,
+        title: completedJob.title || completedJob.structured_json?.attributes?.title || targetPrompt,
+        type: completedJob.type || completedJob.diagram_type || 'Architecture',
+        complexity: typeof completedJob.complexity === 'object' ? (completedJob.complexity?.label || 'Moderate') : (completedJob.complexity || 'Moderate'),
         routing: 'Kroki Renderer',
-        renderer: res.renderer || 'Graphviz',
-        validation: res.validation || 'Passed',
-        nodesCount: res.nodesCount ?? (res.structured_json?.nodes?.length ?? 0),
-        edgesCount: res.edgesCount ?? (res.structured_json?.edges?.length ?? 0),
-        latency: res.latency || '320ms',
-        dslCode: res.dslCode || res.dsl_code,
-        svgContent: res.svgContent || res.svg_content,
+        renderer: completedJob.renderer || 'Graphviz',
+        validation: completedJob.validation_status || completedJob.status || 'Passed',
+        status: completedJob.status,
+        attempt_count: completedJob.attempt_count || 1,
+        nodesCount: completedJob.nodesCount ?? (completedJob.structured_json?.nodes?.length ?? 0),
+        edgesCount: completedJob.edgesCount ?? (completedJob.structured_json?.edges?.length ?? 0),
+        latency: completedJob.latency || '320ms',
+        dslCode: completedJob.dslCode || completedJob.dsl_code,
+        svgContent: completedJob.svgContent || completedJob.svg_content,
+        structured_json: completedJob.structured_json,
       };
 
       setDiagram(generated);
       setIsGenerating(false);
 
-      // Add new history entry
+      // Add to local state & refresh persistent history from backend
       const newHistoryItem = {
-        id: `hist-${Date.now()}`,
+        id: generated.id || `hist-${Date.now()}`,
         title: generated.title,
         type: generated.type,
         prompt: targetPrompt,
         timestamp: 'Just now',
         diagram: generated,
       };
-      setHistory((prev) => [newHistoryItem, ...prev]);
+      setHistory((prev) => [newHistoryItem, ...prev.filter(h => h.id !== newHistoryItem.id)]);
       setActiveHistoryId(newHistoryItem.id);
 
-      // Add confirmation from AI to chat with attached diagram object
       const completionMsg = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: `Generated ${generated.type} diagram using ${generated.renderer}. Structural AST validation passed with zero topological violations.`,
+        text: `Generated ${generated.type} diagram using ${generated.renderer}. AST & SVG validation passed cleanly (${generated.attempt_count > 1 ? `Repaired on Attempt ${generated.attempt_count}` : 'Attempt 1'}).`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         diagram: generated,
         completedPipeline: true,
         prompt: targetPrompt,
       };
       setMessages((prev) => [...prev, completionMsg]);
+      await fetchUserHistory();
     } catch (err) {
       console.error('Generation failed:', err);
       setIsGenerating(false);
@@ -239,37 +335,46 @@ export function App() {
   };
 
   // Select item from left ChatGPT history sidebar
-  const handleSelectHistory = (item) => {
+  const handleSelectHistory = async (item) => {
     setIsInDiscoverMode(false);
     setActiveHistoryId(item.id);
-    if (item.diagram) {
-      setDiagram(item.diagram);
-    }
-    setLastGeneratedPrompt(item.prompt || item.title);
 
-    const time = 'Previous session';
-    setMessages([
-      {
-        id: `msg-user-${item.id}`,
-        sender: 'user',
-        text: item.prompt || item.title,
-        timestamp: time
-      },
-      {
-        id: `msg-ai-${item.id}`,
-        sender: 'ai',
-        text: `Loaded archived ${item.type || 'Architecture'} specification.`,
-        timestamp: time,
-        diagram: item.diagram || diagram
+    try {
+      const detail = await getHistoryItem(item.id);
+      const loadedDiagram = {
+        id: detail.id,
+        title: detail.title || detail.prompt,
+        type: detail.diagram_type || 'Architecture',
+        complexity: typeof detail.complexity === 'object' ? (detail.complexity?.label || 'Moderate') : (detail.complexity || 'Moderate'),
+        routing: 'Kroki Renderer',
+        renderer: detail.renderer || 'Mermaid',
+        validation: detail.validation_status || detail.status || 'Passed',
+        status: detail.status,
+        attempt_count: detail.attempt_count || 1,
+        dslCode: detail.dslCode || detail.dsl_code,
+        svgContent: detail.svgContent || detail.svg_content,
+        structured_json: detail.structured_json,
+      };
+      setDiagram(loadedDiagram);
+      setLastGeneratedPrompt(detail.prompt || detail.title);
+    } catch (err) {
+      console.error('Failed to load history item detail:', err);
+      if (item.diagram) {
+        setDiagram(item.diagram);
       }
-    ]);
+    }
   };
 
-  // Delete item from history
-  const handleDeleteHistory = (id) => {
+  // Delete item from history and remove from database
+  const handleDeleteHistory = async (id) => {
     setHistory((prev) => prev.filter((item) => item.id !== id));
     if (activeHistoryId === id) {
       setActiveHistoryId(null);
+    }
+    try {
+      await deleteHistoryItem(id);
+    } catch (err) {
+      console.error('Delete history item failed on backend:', err);
     }
   };
 
