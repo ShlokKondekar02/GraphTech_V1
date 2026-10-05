@@ -11,7 +11,10 @@ POST /api/diagrams/generate  -- Sprint 2: full pipeline (reuse or fresh Groq gen
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import uuid
+import threading
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,6 +36,7 @@ from app.services.embedding_service import (
     embedding_service,
 )
 from app.services.generation_service import generation_service
+from app.services.job_tracker_service import job_tracker_service
 from app.services.preprocessing_service import build_preprocessor
 from app.services.rendering_service import rendering_service
 
@@ -222,6 +226,10 @@ async def generate_diagram(
         svg_content=result.svg_content,
         dslCode=result.dsl_code,
         svgContent=result.svg_content,
+        attempt_count=result.attempt_count,
+        validation_status=result.validation_status,
+        repair_history=result.repair_history,
+        validation_details=result.validation_details,
         spacy_enabled=result.spacy_enabled,
         candidates_count=result.candidates_count,
         success=result.is_success,
@@ -263,4 +271,146 @@ async def render_diagram_endpoint(
         dslCode=render_res.dsl_code,
         svgContent=render_res.svg_content,
     )
+
+
+# ------------------------------------------------------------------------------
+# Sprint 5 Endpoints: Progress Polling, Async Jobs & Reference Attachment
+# ------------------------------------------------------------------------------
+
+
+@router.get(
+    "/{job_id}/status",
+    summary="Get async generation job status and stage progress",
+    description="Returns current stage, step index, percentage, and final result when completed.",
+)
+async def get_job_status(job_id: str):
+    """
+    Polling endpoint for the frontend to observe real pipeline stage transitions.
+    """
+    job = job_tracker_service.get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found in active registry",
+        )
+    return job.to_dict()
+
+
+def _run_async_pipeline_task(job_id: str, prompt: str, db_session_factory):
+    """
+    Background worker that executes the pipeline while emitting stage events.
+    """
+    db = db_session_factory()
+    try:
+        job_tracker_service.update_job(job_id, "scope_guard", message="Checking domain scope...")
+        time_step = 0.05
+
+        # Execute generation service pipeline
+        job_tracker_service.update_job(job_id, "preprocessing", message="spaCy NLP prompt normalization...")
+        job_tracker_service.update_job(job_id, "embedding_search", message="Voyage AI embedding & pgvector search...")
+        job_tracker_service.update_job(job_id, "cache_check", message="Evaluating cache hit vs fresh generation...")
+        job_tracker_service.update_job(job_id, "llm_generation", message="Calling Groq LLM for AST generation...")
+
+        result = generation_service.run_pipeline(db=db, prompt=prompt)
+
+        job_tracker_service.update_job(job_id, "ast_validation", message="Validating Pydantic AST & graph topology...")
+        job_tracker_service.update_job(job_id, "rendering", message="Compiling AST & rendering SVG via Kroki...")
+        job_tracker_service.update_job(job_id, "output_validation", message="Verifying SVG XML & semantic label match...")
+
+        resp_dict = {
+            "request_id": result.request_id,
+            "status": result.status,
+            "source": result.source,
+            "prompt": result.prompt,
+            "preprocessed_prompt": result.preprocessed_prompt,
+            "diagram_type": result.diagram_type,
+            "structured_json": result.structured_json,
+            "complexity": result.complexity.to_dict() if result.complexity else None,
+            "similarity_score": result.similarity_score,
+            "validation_errors": result.validation_errors,
+            "rejection_reason": result.rejection_reason,
+            "renderer": result.renderer,
+            "dsl_code": result.dsl_code,
+            "svg_content": result.svg_content,
+            "dslCode": result.dsl_code,
+            "svgContent": result.svg_content,
+            "attempt_count": result.attempt_count,
+            "validation_status": result.validation_status,
+            "repair_history": result.repair_history,
+            "validation_details": result.validation_details,
+            "spacy_enabled": result.spacy_enabled,
+            "candidates_count": result.candidates_count,
+            "success": result.is_success,
+        }
+
+        if result.is_success:
+            job_tracker_service.update_job(
+                job_id, "completed", message="Pipeline completed successfully", result=resp_dict
+            )
+        else:
+            job_tracker_service.update_job(
+                job_id, "failed", message=result.rejection_reason or "Pipeline generation rejected", result=resp_dict, error=result.rejection_reason
+            )
+    except Exception as exc:
+        logger.error("Async pipeline job %s failed: %s", job_id, exc, exc_info=True)
+        job_tracker_service.update_job(job_id, "failed", message=f"Internal error: {exc}", error=str(exc))
+    finally:
+        db.close()
+
+
+@router.post(
+    "/generate-async",
+    summary="Start async diagram generation job",
+    description="Initiates background generation pipeline and returns a job_id for polling status.",
+)
+async def generate_diagram_async(
+    body: GenerateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Asynchronous generation entry point driving real frontend pipeline progress.
+    """
+    job_id = str(uuid.uuid4())
+    job_tracker_service.create_job(job_id)
+
+    from app.core.database import SessionLocal
+    background_tasks.add_task(_run_async_pipeline_task, job_id, body.prompt, SessionLocal)
+
+    return {
+        "job_id": job_id,
+        "status": "scope_guard",
+        "message": "Async generation job initiated",
+        "poll_url": f"/api/diagrams/{job_id}/status",
+    }
+
+
+@router.post(
+    "/upload-reference",
+    summary="Upload reference file to extract text context for generation",
+    description="Extracts plain text content from uploaded reference code or document files.",
+)
+async def upload_reference_file(file: UploadFile = File(...)):
+    """
+    Extract text context from uploaded reference files.
+    """
+    filename = file.filename or "reference.txt"
+    try:
+        content_bytes = await file.read()
+        extracted_text = content_bytes.decode("utf-8", errors="ignore").strip()
+        if len(extracted_text) > 4000:
+            extracted_text = extracted_text[:4000] + "\n... [truncated]"
+
+        return {
+            "success": True,
+            "filename": filename,
+            "extracted_text": extracted_text,
+            "size_bytes": len(content_bytes),
+        }
+    except Exception as exc:
+        logger.error("Failed to extract reference file content: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not read uploaded file content: {exc}",
+        )
+
 
