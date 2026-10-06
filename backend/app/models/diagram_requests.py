@@ -67,6 +67,10 @@ class DiagramRequest(Base):
     validation_status = Column(String(50), nullable=True)   # "validated" | "auto_repaired" | "output_validation_failed"
     repair_history = Column(JSONType, nullable=True)         # list of attempt log dicts
 
+    # ---- Chat & Conversation Thread History --------------------------------
+    chat_history = Column(JSONType, nullable=True)           # persistent list of chat message dicts
+
+
     # ---- Timestamps --------------------------------------------------------
     created_at = Column(
         DateTime(timezone=True),
