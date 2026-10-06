@@ -20,6 +20,28 @@ import { FullScreenImageViewer } from './components/Modal/FullScreenImageViewer'
 import { GoogleAuthModal } from './components/Auth/GoogleAuthModal';
 import { INITIAL_HISTORY } from './data/diagramSamples';
 
+// Helper to detect if user prompt in chat is an explicit request to generate a diagram
+function hasDiagramGenerationIntent(text) {
+  if (!text) return false;
+  const clean = text.toLowerCase().trim();
+
+  // Questions starting with question words are Chat Q&A explanations, not diagram generation
+  if (/^(what|how|why|explain|describe|tell me|can you explain|compare)\b/.test(clean)) {
+    return false;
+  }
+
+  const creationVerbs = ['create', 'generate', 'draw', 'make', 'build', 'render', 'show diagram', 'design'];
+  const diagramTerms = [
+    'erd', 'entity relationship', 'binary tree', 'tree', 'flowchart', 'architecture',
+    'sequence diagram', 'class diagram', 'mindmap', 'diagram', 'graph', 'database schema'
+  ];
+
+  const hasVerb = creationVerbs.some((v) => clean.includes(v));
+  const hasType = diagramTerms.some((t) => clean.includes(t));
+
+  return hasVerb && hasType;
+}
+
 export function App() {
   // Authentication state (Google Auth pop-up modal)
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -126,9 +148,14 @@ export function App() {
     }
   };
 
-  // Handle normal message send (Diagram-Aware Chat Q&A)
+  // Handle normal message send (Diagram-Aware Chat Q&A or Intent-Routed Diagram Generation)
   const handleSendMessage = async (text, attachment = null) => {
     if (!text?.trim() && !attachment) return;
+
+    // Smart Intent Router: If user prompt expresses explicit diagram generation intent (e.g. "create ERD", "generate binary tree"), route to pipeline!
+    if (hasDiagramGenerationIntent(text)) {
+      return runGenerationPipeline(text, attachment);
+    }
 
     setIsInDiscoverMode(false);
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
