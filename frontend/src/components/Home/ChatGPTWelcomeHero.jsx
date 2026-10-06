@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   Send, 
@@ -51,6 +51,18 @@ export function ChatGPTWelcomeHero({
   isLoggedIn = false,
   onOpenAuthModal
 }) {
+  const textareaRef = useRef(null);
+
+  // Auto-resize textarea to expand with newlines up to max-height, then scroll (ChatGPT style)
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = `${scrollHeight}px`;
+    textarea.style.overflowY = scrollHeight > 200 ? 'auto' : 'hidden';
+  }, [inputText]);
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -103,12 +115,13 @@ export function ChatGPTWelcomeHero({
         {/* Centered Large ChatGPT-style Search / Prompt Box */}
         <div className="hero-searchbar-card">
           <textarea
+            ref={textareaRef}
             className="hero-searchbar-textarea"
             placeholder="Describe your system architecture or technical workflow in plain English..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            rows={3}
+            rows={2}
             disabled={isGenerating}
           />
 
