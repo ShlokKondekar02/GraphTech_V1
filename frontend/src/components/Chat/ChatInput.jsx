@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Send, Sparkles, Loader2, Plus, X, FileText } from 'lucide-react';
 
 export function ChatInput({ 
@@ -11,6 +11,16 @@ export function ChatInput({
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [attachment, setAttachment] = useState(null);
+
+  // Auto-resize textarea to expand with newlines up to max-height, then scroll (ChatGPT style)
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = `${scrollHeight}px`;
+    textarea.style.overflowY = scrollHeight > 180 ? 'auto' : 'hidden';
+  }, [inputText]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -98,7 +108,7 @@ export function ChatInput({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
-          rows={2}
+          rows={1}
           disabled={isGenerating}
         />
 
