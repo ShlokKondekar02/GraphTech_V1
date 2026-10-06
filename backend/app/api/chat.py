@@ -17,9 +17,50 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.config import settings
 from app.services.groq_service import groq_service
 
+import re
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+# Known tech acronyms/short words that have no vowels or 2-3 letters
+VALID_TECH_ACRONYMS = {
+    "erd", "aws", "s3", "db", "api", "cpu", "sql", "dns", "cdn", "tcp", "udp",
+    "ssl", "ssh", "vm", "ui", "ux", "ip", "id", "io", "ai", "ml", "jwt", "k8s", "sdk"
+}
+
+
+def is_gibberish_or_invalid(text: str) -> bool:
+    """
+    Fast zero-cost check for random key mashing or nonsensical text (e.g., 'hdjbdbc', 'asdfgh').
+    Prevents burning LLM tokens on invalid inputs.
+    """
+    clean = text.strip().lower()
+    if len(clean) < 2:
+        return True
+
+    words = clean.split()
+    
+    # Check if input is a single word with no vowels and not a known tech acronym
+    if len(words) == 1:
+        word = words[0]
+        if len(word) > 3 and word not in VALID_TECH_ACRONYMS:
+            vowels = set("aeiouy")
+            has_vowels = any(c in vowels for c in word)
+            if not has_vowels:
+                return True
+            # Check for excessive consonant sequences (e.g., 5+ consonants in a row)
+            consonant_run = max((len(match) for match in re.findall(r'[^aeiouy\d\W]+', word)), default=0)
+            if consonant_run >= 5 and word not in VALID_TECH_ACRONYMS:
+                return True
+
+    # Check for random key mash patterns (e.g., 'asdfgh', 'qwer', 'zxcv')
+    key_mash_patterns = [r'asdfgh', r'zxcvb', r'qwerty', r'hjkl']
+    for pat in key_mash_patterns:
+        if re.search(pat, clean):
+            return True
+
+    return False
 
 
 class DiagramContextInput(BaseModel):
@@ -53,6 +94,35 @@ def send_chat_message(body: ChatMessageRequest) -> ChatMessageResponse:
     """
     user_msg = body.message.strip()
     ctx = body.diagram_context
+
+    # 1. Zero-Token Guard: Catch gibberish or invalid text immediately
+    if is_gibberish_or_invalid(user_msg):
+        return ChatMessageResponse(
+            reply=(
+                "I am **GraphTech AI Assistant**, your computer science & architecture specialist.\n\n"
+                "I didn't quite catch that. You can:\n"
+                "- **Ask a technical question** (e.g., *\"Explain microservices architecture\"*)\n"
+                "- **Request a diagram** (e.g., *\"Create an ERD for User Auth\"* or *\"Draw a Binary Tree\"*)\n"
+                "- **Analyze an active diagram** loaded in your Studio!"
+            ),
+            diagram_aware=False,
+            context_referenced=None
+        )
+
+    # 2. Check for single vague prompt like "diagram" or "erd" without detail
+    if user_msg.lower() in ["diagram", "draw diagram", "make diagram"]:
+        return ChatMessageResponse(
+            reply=(
+                "What kind of diagram would you like to generate?\n\n"
+                "For example, try typing:\n"
+                "- *\"Create a Flowchart for Login Authentication\"*\n"
+                "- *\"Generate an ERD for E-commerce Cart & Checkout\"*\n"
+                "- *\"Draw a Binary Search Tree with nodes 10, 5, 15\"*\n"
+                "- *\"Create a Sequence Diagram for Payment Processing\"*"
+            ),
+            diagram_aware=False,
+            context_referenced=None
+        )
 
     diagram_aware = False
     context_summary = ""
@@ -107,11 +177,11 @@ DSL Source Code:
 INSTRUCTIONS:
 1. Answer the user's question directly referencing the components, connections, and flows shown in the diagram above.
 2. If asked about performance, security, or bottlenecks, analyze the specific nodes and edges present in the active diagram.
-3. Be clear, concise, professional, and structure your answer with clean Markdown formatting (bullet points, bold text)."""
+3. Keep answers clear, concise, professional, and readable using natural Markdown formatting."""
 
     else:
         system_prompt = """You are GraphTech AI Assistant, an expert computer science and software architecture consultant.
-Answer the user's computer science, software design, and system architecture questions concisely and professionally using Markdown formatting."""
+Your job is to answer software design, system architecture, database modeling, and computer science questions concisely, clearly, and professionally using clean Markdown formatting."""
 
     # Call Groq LLM if client is available
     client = None
@@ -161,3 +231,4 @@ Answer the user's computer science, software design, and system architecture que
         diagram_aware=diagram_aware,
         context_referenced=context_summary if diagram_aware else None,
     )
+
