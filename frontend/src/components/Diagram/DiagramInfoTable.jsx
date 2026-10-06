@@ -39,11 +39,6 @@ export function DiagramInfoTable({
         </div>
 
         <div className="spec-header-controls">
-          <span className={`spec-badge-verified ${metadata?.status === 'failed_validation' ? 'badge-failed' : ''}`}>
-            {metadata?.status === 'failed_validation'
-              ? '✗ Validation Failed'
-              : (metadata?.attempt_count > 1 ? `✓ Repaired & Validated (Attempt ${metadata.attempt_count})` : '✓ AST & SVG Validated')}
-          </span>
           {onClose && (
             <button
               type="button"
