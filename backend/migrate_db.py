@@ -29,6 +29,7 @@ def migrate_database():
         "ALTER TABLE diagram_requests ADD COLUMN IF NOT EXISTS attempt_count SMALLINT DEFAULT 1;",
         "ALTER TABLE diagram_requests ADD COLUMN IF NOT EXISTS validation_status VARCHAR(50);",
         "ALTER TABLE diagram_requests ADD COLUMN IF NOT EXISTS repair_history JSONB;",
+        "ALTER TABLE diagram_requests ADD COLUMN IF NOT EXISTS chat_history JSONB;",
     ]
 
     with engine.connect() as conn:
