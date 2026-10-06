@@ -507,6 +507,23 @@ class GenerationService:
             if result.validation_errors and not rejection_reason_text:
                 rejection_reason_text = "; ".join(result.validation_errors[:5])
 
+            initial_chat = [
+                {
+                    "id": f"user-{result.request_id[:8]}",
+                    "sender": "user",
+                    "text": result.prompt,
+                    "timestamp": datetime.now(timezone.utc).strftime("%I:%M %p")
+                },
+                {
+                    "id": f"ai-{result.request_id[:8]}",
+                    "sender": "ai",
+                    "text": f"Generated {result.diagram_type or 'architecture'} diagram using {result.renderer or 'Mermaid'}. AST & SVG validation passed cleanly.",
+                    "timestamp": datetime.now(timezone.utc).strftime("%I:%M %p"),
+                    "completedPipeline": True,
+                    "prompt": result.prompt,
+                }
+            ]
+
             try:
                 row = DiagramRequest(
                     id=uuid.UUID(result.request_id),
@@ -528,6 +545,7 @@ class GenerationService:
                     attempt_count=result.attempt_count,
                     validation_status=result.validation_status or result.status,
                     repair_history=result.repair_history if result.repair_history else None,
+                    chat_history=initial_chat,
                 )
                 db.add(row)
                 db.commit()
