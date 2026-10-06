@@ -9,14 +9,12 @@ import {
   Download, 
   Sparkles,
   Maximize,
-  Radio,
   Eye,
   Code,
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  RotateCw,
-  Home
+  RotateCw
 } from 'lucide-react';
 
 export function UnifiedStudioTab({
@@ -96,36 +94,9 @@ export function UnifiedStudioTab({
       */}
       <div className="unified-studio-topbar">
         <div className="studio-topbar-left">
-          {onGoDiscover && (
-            <>
-              <button
-                type="button"
-                className="studio-btn-home"
-                onClick={onGoDiscover}
-                title="Return to Discover page"
-              >
-                <Home size={13} />
-                <span>Discover</span>
-              </button>
-              <div className="studio-topbar-separator" />
-            </>
-          )}
-
           <div className="studio-brand-badge">
             <Sparkles size={14} />
             <span>Diagram Studio</span>
-          </div>
-
-          {/* Connected Prompt / Diagram Info */}
-          <div className="studio-connection-pill">
-            <Radio size={12} className={isGenerating ? 'spin-anim pulse-color' : 'active-color'} />
-            <span className="connection-label">Connected:</span>
-            <span className="connection-prompt" title={diagram?.title || lastGeneratedPrompt}>
-              {diagram ? diagram.title : (lastGeneratedPrompt ? `"${lastGeneratedPrompt}"` : 'New Architecture Session')}
-            </span>
-            {diagram?.type && (
-              <span className="navbar-badge" style={{ marginLeft: '4px' }}>{diagram.type}</span>
-            )}
           </div>
         </div>
 
