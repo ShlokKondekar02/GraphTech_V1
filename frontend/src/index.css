@@ -621,6 +621,8 @@ html, body {
 
 .hero-searchbar-textarea {
   width: 100%;
+  min-height: 48px;
+  max-height: 200px;
   border: none;
   background: transparent;
   outline: none;
@@ -629,6 +631,26 @@ html, body {
   color: var(--text-primary);
   resize: none;
   line-height: 1.5;
+  box-sizing: border-box;
+  padding: 4px 0;
+  overflow-y: hidden;
+}
+
+.hero-searchbar-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.hero-searchbar-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hero-searchbar-textarea::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.hero-searchbar-textarea::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 .hero-searchbar-textarea::placeholder {
@@ -1333,16 +1355,36 @@ html, body {
 
 .chat-prompt-textarea {
   width: 100%;
-  min-height: 40px;
-  max-height: 90px;
+  min-height: 26px;
+  max-height: 180px;
   border: none;
   background: transparent;
   outline: none;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--text-primary);
   resize: none;
-  line-height: 1.45;
+  line-height: 1.5;
+  box-sizing: border-box;
+  padding: 3px 0;
+  overflow-y: hidden;
+}
+
+.chat-prompt-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-prompt-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-prompt-textarea::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.chat-prompt-textarea::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 .chat-prompt-textarea::placeholder {
