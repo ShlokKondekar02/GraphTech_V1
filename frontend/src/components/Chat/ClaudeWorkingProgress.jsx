@@ -24,7 +24,7 @@ export function ClaudeWorkingProgress({
   isCompleted = false,
   prompt = '' 
 }) {
-  const [isExpanded, setIsExpanded] = useState(isGenerating);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const currentStep = PIPELINE_STEPS[activeStepIndex] || PIPELINE_STEPS[0];
   const currentQuery = activeStepIndex === 0 && prompt
@@ -34,57 +34,60 @@ export function ClaudeWorkingProgress({
     ? 100 
     : Math.min(100, Math.round(((activeStepIndex + 1) / PIPELINE_STEPS.length) * 100));
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setIsExpanded((prev) => !prev);
+    }
+  };
+
   return (
     <div className={`claude-working-container ${isGenerating ? 'is-running' : 'is-done'}`}>
-      {/* Live Autonomous Search Activity Bar */}
-      {isGenerating && (
-        <div className="autonomous-search-ticker">
-          <div className="search-pulse-radar">
-            <Search size={12} className="search-radar-icon" />
-            <span className="radar-ping-ring" />
-          </div>
-          <div className="search-ticker-content">
-            <span className="search-ticker-label">AUTONOMOUS SEARCH &amp; REASONING:</span>
-            <span className="search-ticker-query">{currentQuery}</span>
-          </div>
-          <span className="search-ticker-badge">Live</span>
-        </div>
-      )}
-
-      {/* Header Bar */}
+      {/* Single-Line Header (shows one active stage at a time like Claude; click to show all) */}
       <div 
         className="claude-working-header"
         onClick={() => setIsExpanded((prev) => !prev)}
+        onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
+        aria-expanded={isExpanded}
+        title={isExpanded ? 'Click to collapse pipeline' : 'Click to show all pipeline stages'}
       >
         <div className="claude-working-left">
           {isGenerating ? (
             <div className="claude-spinner-wrap">
-              <Loader2 size={14} className="claude-spin-icon" />
+              <Loader2 size={13} className="claude-spin-icon" />
             </div>
           ) : (
             <div className="claude-check-wrap">
-              <CheckCircle2 size={14} className="claude-check-icon" />
+              <CheckCircle2 size={13} className="claude-check-icon" />
             </div>
           )}
 
-          <div className="claude-working-summary">
+          <div className="claude-working-summary" key={isGenerating ? activeStepIndex : 'done'}>
             {isGenerating ? (
-              <span className="claude-status-title">
-                <span>Synthesizing Architecture</span>
+              <>
                 <span className="claude-stage-pill">
-                  Stage {activeStepIndex + 1}/6: {currentStep.label}
+                  Stage {activeStepIndex + 1}/6
                 </span>
-              </span>
+                <span className="claude-stage-name-current">
+                  {currentStep.label}
+                </span>
+                <span className="claude-step-sep">·</span>
+                <span className="claude-step-query-subtext">
+                  {currentQuery}
+                </span>
+              </>
             ) : (
-              <span className="claude-status-title done">
-                <span>Autonomous AI Pipeline passed</span>
+              <>
+                <span className="claude-stage-name-current done">
+                  Autonomous AI Pipeline passed
+                </span>
                 <span className="claude-badge-passed">
                   <ShieldCheck size={11} />
-                  <span>AST Invariant Verified</span>
+                  <span>6/6 Verified</span>
                 </span>
-              </span>
+              </>
             )}
           </div>
         </div>
@@ -101,16 +104,31 @@ export function ClaudeWorkingProgress({
           <button 
             type="button" 
             className="claude-expand-btn"
-            aria-label={isExpanded ? 'Collapse pipeline stages' : 'Expand pipeline stages'}
+            aria-label={isExpanded ? 'Collapse pipeline stages' : 'Show all pipeline stages'}
+            tabIndex={-1}
           >
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
       </div>
 
-      {/* Collapsible Steps Detail */}
+      {/* Collapsible Steps Detail (Shown only when clicked on) */}
       {isExpanded && (
         <div className="claude-stages-detail">
+          {isGenerating && (
+            <div className="autonomous-search-ticker in-dropdown">
+              <div className="search-pulse-radar">
+                <Search size={11} className="search-radar-icon" />
+                <span className="radar-ping-ring" />
+              </div>
+              <div className="search-ticker-content">
+                <span className="search-ticker-label">AUTONOMOUS SEARCH &amp; REASONING:</span>
+                <span className="search-ticker-query">{currentQuery}</span>
+              </div>
+              <span className="search-ticker-badge">Live</span>
+            </div>
+          )}
+
           <div className="claude-stages-list">
             {PIPELINE_STEPS.map((step, idx) => {
               let stepStatus = 'pending';

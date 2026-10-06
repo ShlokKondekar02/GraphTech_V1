@@ -10,7 +10,6 @@ import {
   Database,
   GitBranch,
   Layers,
-  Compass,
   LogOut
 } from 'lucide-react';
 
@@ -116,20 +115,6 @@ export function HistorySidebar({
         </button>
       </div>
 
-      {/* Discover Templates Link */}
-      {onGoDiscover && (
-        <div style={{ padding: '0 12px', marginBottom: '8px' }}>
-          <button
-            type="button"
-            className="btn-sidebar-discover"
-            onClick={onGoDiscover}
-            title="Explore Diagram Architecture Discover Page"
-          >
-            <Compass size={14} />
-            <span>Discover Templates</span>
-          </button>
-        </div>
-      )}
 
       {/* Search Bar */}
       <div className="sidebar-search-box">

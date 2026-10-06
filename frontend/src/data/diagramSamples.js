@@ -734,3 +734,4 @@ function getCustomArchitectureDiagram(userPrompt) {
     svgContent: svg
   };
 }
+  
