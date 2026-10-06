@@ -10,6 +10,7 @@ import {
   deleteHistoryItem,
   sendChatMessage,
   uploadReferenceFile,
+  updateSessionChat,
 } from './api/client';
 import { Navbar } from './components/Navbar';
 import { CleanBackground } from './components/Background/CleanBackground';
@@ -202,7 +203,16 @@ export function App() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         diagramAware: chatRes.diagram_aware,
       };
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => {
+        const nextMessages = [...prev, aiMsg];
+        const targetId = activeHistoryId || diagram?.id;
+        if (targetId) {
+          updateSessionChat(targetId, nextMessages).catch((err) => {
+            console.error('Failed to sync updated chat history:', err);
+          });
+        }
+        return nextMessages;
+      });
     } catch (err) {
       console.error('Chat API call failed:', err);
       const fallbackMsg = {
@@ -341,7 +351,16 @@ export function App() {
         completedPipeline: true,
         prompt: targetPrompt,
       };
-      setMessages((prev) => [...prev, completionMsg]);
+
+      const initialSessionMessages = [userMsg, completionMsg];
+      setMessages(initialSessionMessages);
+
+      if (generated.id) {
+        updateSessionChat(generated.id, initialSessionMessages).catch((err) => {
+          console.error('Failed to sync initial session chat:', err);
+        });
+      }
+
       await fetchUserHistory();
     } catch (err) {
       console.error('Generation failed:', err);
@@ -384,6 +403,30 @@ export function App() {
       };
       setDiagram(loadedDiagram);
       setLastGeneratedPrompt(detail.prompt || detail.title);
+
+      // Restore full ChatGPT conversation history stream in left Chat Panel!
+      if (detail.chat_history && Array.isArray(detail.chat_history) && detail.chat_history.length > 0) {
+        setMessages(detail.chat_history);
+      } else {
+        const time = detail.created_at ? new Date(detail.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent';
+        setMessages([
+          {
+            id: `user-${detail.id}`,
+            sender: 'user',
+            text: detail.prompt || detail.title,
+            timestamp: time,
+          },
+          {
+            id: `ai-${detail.id}`,
+            sender: 'ai',
+            text: `Generated ${detail.diagram_type || 'architecture'} diagram using ${detail.renderer || 'Mermaid'}. AST & SVG validation passed cleanly.`,
+            timestamp: time,
+            diagram: loadedDiagram,
+            completedPipeline: true,
+            prompt: detail.prompt,
+          }
+        ]);
+      }
     } catch (err) {
       console.error('Failed to load history item detail:', err);
       if (item.diagram) {
