@@ -81,6 +81,7 @@ def list_history(
             "attempt_count": r.attempt_count or 1,
             "validation_status": r.validation_status or r.status,
             "structured_json": r.structured_json,
+            "chat_history": r.chat_history or [],
         })
 
     return results
@@ -130,6 +131,42 @@ def get_history_item(
         "attempt_count": row.attempt_count or 1,
         "validation_status": row.validation_status or row.status,
         "repair_history": row.repair_history,
+        "chat_history": row.chat_history or [],
+    }
+
+
+@router.put(
+    "/{request_id}/chat",
+    response_model=Dict[str, Any],
+    summary="Update chat conversation history for a diagram session",
+)
+def update_session_chat(
+    request_id: str,
+    body: Dict[str, Any],
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Save or sync full chat conversation messages for a history session.
+    """
+    try:
+        req_uuid = uuid.UUID(request_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid UUID format: {request_id}") from exc
+
+    row = db.query(DiagramRequest).filter(DiagramRequest.id == req_uuid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Diagram request {request_id} not found")
+
+    messages = body.get("chat_history") or body.get("messages") or []
+    row.chat_history = messages
+    db.commit()
+    logger.info("Updated chat_history for diagram_request id=%s (total messages=%d)", request_id, len(messages))
+
+    return {
+        "success": True,
+        "id": str(row.id),
+        "messages_count": len(messages),
+        "chat_history": row.chat_history,
     }
 
 
@@ -158,3 +195,4 @@ def delete_history_item(
     db.commit()
     logger.info("Deleted diagram_request id=%s from history", request_id)
     return {"success": True, "message": f"Deleted diagram request {request_id}", "id": request_id}
+
