@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, PanelLeft, LogOut } from 'lucide-react';
+import { Network, PanelLeft } from 'lucide-react';
 
 export function Navbar({ 
   onToggleSidebar, 
@@ -76,15 +76,6 @@ export function Navbar({
               )}
               <span>{currentUser?.name || 'User'}</span>
             </div>
-            <button
-              type="button"
-              className="nav-btn-logout"
-              onClick={onLogout}
-              title="Sign out"
-            >
-              <LogOut size={13} style={{ marginRight: '4px', verticalAlign: '-1px' }} />
-              Sign out
-            </button>
           </div>
         )}
       </div>
