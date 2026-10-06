@@ -230,3 +230,22 @@ export async function uploadReferenceFile(file) {
   return response.json();
 }
 
+/**
+ * Save or update chat conversation history for a diagram session.
+ * @param {string} id
+ * @param {Array} messages
+ * @returns {Promise<object>}
+ */
+export async function updateSessionChat(id, messages) {
+  const response = await fetch(`${API_BASE_URL}/api/history/${id}/chat`, {
+    ...defaultOptions,
+    method: 'PUT',
+    body: JSON.stringify({ chat_history: messages }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update session chat history: ${response.status}`);
+  }
+  return response.json();
+}
+
+
