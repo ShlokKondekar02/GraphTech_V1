@@ -1724,6 +1724,8 @@ body {
   position: relative;
   overflow: auto;
   min-height: 0;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
 }
 
 /* SVG Rendering Container (Hero Floating Architectural Schematic) */
@@ -2583,6 +2585,8 @@ body {
   padding: 30px;
   position: relative;
   cursor: default;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
 }
 
 .fullscreen-image-wrapper {
