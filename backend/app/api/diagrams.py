@@ -28,6 +28,8 @@ from app.schemas.diagrams import (
     RenderDiagramRequest,
     RenderDiagramResponse,
 )
+from app.core.rate_limiter import create_rate_limit_checker
+from app.services.audit_service import audit_service
 from app.services.embedding_service import (
     EmbeddingAPIError,
     EmbeddingResponseError,
@@ -39,10 +41,23 @@ from app.services.generation_service import generation_service
 from app.services.job_tracker_service import job_tracker_service
 from app.services.preprocessing_service import build_preprocessor
 from app.services.rendering_service import rendering_service
+from app.services.sanitization_service import sanitization_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/diagrams", tags=["Diagrams"])
+
+# Rate limiters
+check_diagram_rate_limit = create_rate_limit_checker(
+    "diagram_generate",
+    lambda: settings.RATE_LIMIT_DIAGRAM_PER_MINUTE,
+    60,
+)
+check_prepare_rate_limit = create_rate_limit_checker(
+    "diagram_prepare",
+    lambda: settings.RATE_LIMIT_PREPARE_PER_MINUTE,
+    60,
+)
 
 
 # ------------------------------------------------------------------------------
@@ -54,6 +69,15 @@ router = APIRouter(prefix="/diagrams", tags=["Diagrams"])
 async def list_diagrams_placeholder():
     """Placeholder for listing user diagram requests."""
     return {"diagrams": []}
+
+
+@router.get(
+    "/security-audits",
+    summary="Get recent security audit log events",
+    description="Returns recent rate limit, scope guard, prompt injection, and security events.",
+)
+async def get_security_audits(limit: int = 50, event_type: Optional[str] = None):
+    return {"events": audit_service.get_recent_events(limit=limit, event_type=event_type)}
 
 
 # ------------------------------------------------------------------------------
@@ -72,6 +96,7 @@ async def list_diagrams_placeholder():
         "and returns ranked candidates with their scores."
     ),
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(check_prepare_rate_limit)],
 )
 async def prepare_diagram(
     body: PrepareRequest,
@@ -186,6 +211,7 @@ async def prepare_diagram(
         "Any complexity value Groq may self-report is ignored entirely."
     ),
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(check_diagram_rate_limit)],
 )
 async def generate_diagram(
     body: GenerateRequest,
@@ -296,14 +322,13 @@ async def get_job_status(job_id: str):
     return job.to_dict()
 
 
-def _run_async_pipeline_task(job_id: str, prompt: str, db_session_factory):
+def _run_async_pipeline_task(job_id: str, prompt: str, db_session_factory, prompt_hash: Optional[str] = None):
     """
     Background worker that executes the pipeline while emitting stage events.
     """
     db = db_session_factory()
     try:
         job_tracker_service.update_job(job_id, "scope_guard", message="Checking domain scope...")
-        time_step = 0.05
 
         # Execute generation service pipeline
         job_tracker_service.update_job(job_id, "preprocessing", message="spaCy NLP prompt normalization...")
@@ -355,6 +380,8 @@ def _run_async_pipeline_task(job_id: str, prompt: str, db_session_factory):
         logger.error("Async pipeline job %s failed: %s", job_id, exc, exc_info=True)
         job_tracker_service.update_job(job_id, "failed", message=f"Internal error: {exc}", error=str(exc))
     finally:
+        if prompt_hash:
+            job_tracker_service.clear_active_prompt(prompt_hash)
         db.close()
 
 
@@ -362,36 +389,58 @@ def _run_async_pipeline_task(job_id: str, prompt: str, db_session_factory):
     "/generate-async",
     summary="Start async diagram generation job",
     description="Initiates background generation pipeline and returns a job_id for polling status.",
+    dependencies=[Depends(check_diagram_rate_limit)],
 )
 async def generate_diagram_async(
     body: GenerateRequest,
     background_tasks: BackgroundTasks,
 ):
     """
-    Asynchronous generation entry point driving real frontend pipeline progress.
+    Asynchronous generation entry point with request deduplication and rate limiting.
     """
+    prompt_hash = job_tracker_service.hash_prompt(body.prompt)
+    active_job = job_tracker_service.find_active_job_for_prompt(
+        prompt_hash,
+        max_age_seconds=settings.DEDUPLICATION_WINDOW_SECONDS,
+    )
+    if active_job:
+        logger.info(
+            "Deduplicated concurrent generation request for prompt hash=%s -> reusing job_id=%s",
+            prompt_hash[:12],
+            active_job.job_id,
+        )
+        return {
+            "job_id": active_job.job_id,
+            "status": active_job.stage,
+            "message": "Attached to active in-flight generation job (deduplicated)",
+            "poll_url": f"/api/diagrams/{active_job.job_id}/status",
+            "deduplicated": True,
+        }
+
     job_id = str(uuid.uuid4())
     job_tracker_service.create_job(job_id)
+    job_tracker_service.register_active_prompt(prompt_hash, job_id)
 
     from app.core.database import SessionLocal
-    background_tasks.add_task(_run_async_pipeline_task, job_id, body.prompt, SessionLocal)
+    background_tasks.add_task(_run_async_pipeline_task, job_id, body.prompt, SessionLocal, prompt_hash)
 
     return {
         "job_id": job_id,
         "status": "scope_guard",
         "message": "Async generation job initiated",
         "poll_url": f"/api/diagrams/{job_id}/status",
+        "deduplicated": False,
     }
 
 
 @router.post(
     "/upload-reference",
     summary="Upload reference file to extract text context for generation",
-    description="Extracts plain text content from uploaded reference code or document files.",
+    description="Extracts plain text content from uploaded reference code or document files with prompt sanitization.",
 )
 async def upload_reference_file(file: UploadFile = File(...)):
     """
-    Extract text context from uploaded reference files.
+    Extract text context from uploaded reference files and sanitize potential injections.
     """
     filename = file.filename or "reference.txt"
     try:
@@ -400,11 +449,22 @@ async def upload_reference_file(file: UploadFile = File(...)):
         if len(extracted_text) > 4000:
             extracted_text = extracted_text[:4000] + "\n... [truncated]"
 
+        # Sanitize uploaded reference text
+        san_res = sanitization_service.sanitize(extracted_text)
+        if san_res.has_injection_attempt:
+            audit_service.log_event(
+                event_type="PROMPT_INJECTION_DETECTED",
+                detail=f"Detected adversarial injection patterns in uploaded file '{filename}': {san_res.detected_patterns}",
+                metadata={"filename": filename, "patterns": san_res.detected_patterns},
+            )
+        sanitized_content = san_res.sanitized_text
+
         return {
             "success": True,
             "filename": filename,
-            "extracted_text": extracted_text,
+            "extracted_text": sanitized_content,
             "size_bytes": len(content_bytes),
+            "sanitized": san_res.has_injection_attempt,
         }
     except Exception as exc:
         logger.error("Failed to extract reference file content: %s", exc)
