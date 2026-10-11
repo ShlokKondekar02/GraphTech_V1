@@ -60,6 +60,12 @@ class RendererDetector:
         ):
             return "network"
 
+        # Rule 2.5: UML Use Case Diagrams
+        if any(t in node_types for t in ("use_case", "usecase")) or any(
+            t in edge_types for t in ("include", "extend", "includes", "extends")
+        ):
+            return "flowchart"
+
         # Rule 3: Sequence / Interaction
         if any(t in node_types for t in ("actor", "lifeline")) or any(
             t in edge_types for t in ("calls", "reply", "response", "message", "sync_call")
