@@ -586,3 +586,26 @@ def test_t27_network_specialized_schema():
     assert model.diagram_type == "network"
     assert model.nodes[0].type == "server"
 
+
+def test_t28_system_boundary_isolated_node_pruned():
+    """Isolated system boundary box node is pruned so connected actors and use cases pass validation."""
+    payload = {
+        "diagram_type": "generic",
+        "nodes": [
+            _valid_node("system_boundary", "Smart City Citizen Complaint System", "boundary"),
+            _valid_node("citizen", "Citizen", "actor"),
+            _valid_node("submit_complaint", "Submit Complaint", "use_case"),
+        ],
+        "edges": [
+            _valid_edge("e1", "citizen", "submit_complaint"),
+        ],
+        "attributes": _valid_attributes(),
+    }
+    result = validation_service.validate(payload)
+    assert result.is_valid is True
+    # The orphan system boundary is pruned, leaving citizen and submit_complaint connected
+    node_ids = [n.id for n in result.validated_model.nodes]
+    assert "system_boundary" not in node_ids
+    assert "citizen" in node_ids
+    assert "submit_complaint" in node_ids
+
