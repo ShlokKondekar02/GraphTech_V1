@@ -45,6 +45,8 @@ class MermaidCompiler(BaseCompiler):
                 lines.append(f'    {node_id}[/"{safe_label}"/]')
             elif node_type in ("actor", "user", "client"):
                 lines.append(f'    {node_id}(["{safe_label}"])')
+            elif node_type in ("use_case", "usecase"):
+                lines.append(f'    {node_id}(["({safe_label})"])')
             else:
                 lines.append(f'    {node_id}["{safe_label}"]')
 
@@ -56,7 +58,7 @@ class MermaidCompiler(BaseCompiler):
             edge_type = str(edge.get("type", "calls")).lower()
 
             arrow = "-->"
-            if "async" in edge_type or "event" in edge_type or "pubsub" in edge_type or "dotted" in edge_type:
+            if any(k in edge_type for k in ("async", "event", "pubsub", "dotted", "include", "extend")):
                 arrow = "-.->"
             elif "thick" in edge_type or "sync" in edge_type:
                 arrow = "==>"
