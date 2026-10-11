@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Download, 
   RotateCw, 
@@ -48,6 +48,35 @@ export function DiagramViewer({
   const handleZoomIn = onZoomIn || (() => setInternalZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5)));
   const handleZoomOut = onZoomOut || (() => setInternalZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4)));
   const handleResetZoom = onResetZoom || (() => setInternalZoomLevel(getOptimalZoom(diagram)));
+
+  const canvasRef = useRef(null);
+  const zoomInRef = useRef(handleZoomIn);
+  const zoomOutRef = useRef(handleZoomOut);
+  zoomInRef.current = handleZoomIn;
+  zoomOutRef.current = handleZoomOut;
+
+  // Intercept wheel/trackpad pinch events with passive: false to prevent entire website from zooming
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.deltaY < 0) {
+          zoomInRef.current();
+        } else {
+          zoomOutRef.current();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   const handleCopyCode = () => {
     if (diagram?.dslCode) {
@@ -192,20 +221,8 @@ export function DiagramViewer({
 
       {/* Main Diagram Area */}
       <div 
+        ref={canvasRef}
         className="diagram-canvas-area"
-        onWheel={(e) => {
-          if (viewMode === 'preview') {
-            // Zoom with wheel or pinch
-            if (e.ctrlKey || e.metaKey) {
-              e.preventDefault();
-              if (e.deltaY < 0) {
-                handleZoomIn();
-              } else {
-                handleZoomOut();
-              }
-            }
-          }
-        }}
       >
         {viewMode === 'preview' ? (
           <div 
