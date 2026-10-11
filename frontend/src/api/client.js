@@ -102,6 +102,12 @@ export async function generateDiagram(prompt) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After');
+      throw new Error(
+        errorData.detail || `Rate limit reached. Please wait ${retryAfter ? retryAfter + 's' : 'a moment'} before generating again.`
+      );
+    }
     const message = errorData.detail || errorData.rejection_reason || `Generation failed: ${response.status}`;
     throw new Error(message);
   }
@@ -125,6 +131,12 @@ export async function generateDiagramAsync(prompt) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After');
+      throw new Error(
+        errorData.detail || `Rate limit reached. Please wait ${retryAfter ? retryAfter + 's' : 'a moment'} before generating again.`
+      );
+    }
     const message = errorData.detail || errorData.rejection_reason || `Async generation failed: ${response.status}`;
     throw new Error(message);
   }
