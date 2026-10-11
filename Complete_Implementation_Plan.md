@@ -219,10 +219,11 @@ provided. Concretely:
     session, with history and diagrams scoped per authenticated user and
     persisted in PostgreSQL instead of React state.
 
--   A new, clearly separate POST /api/images/creative (Gemini-backed)
-    path is added for general/creative image requests, with its own UI
-    affordance so it is never confused with --- or silently substituted
-    into --- the technical diagram pipeline.
+-   Creative Image Generation: General/creative artistic image generation
+    (via Gemini or an external image generator) is formally deferred to
+    **Future Work / Phase 2**. The technical pipeline strictly enforces
+    Computer Science and IT architecture diagrams via ScopeGuard, rejecting
+    artistic/creative requests before embedding or generation.
 
 -   Reuse from pgvector is treated as a **candidate**, never an
     automatic answer: it is always re-validated (schema + deterministic
@@ -504,54 +505,39 @@ the full user journey end-to-end.
     is backed by a real API call; a page refresh does not lose the
     user\'s diagram history.
 
-**Sprint 6 --- Separate Gemini Creative Path, Security Hardening, and
-Concurrency Safety**
+**Sprint 6 --- Security Hardening, Prompt Sanitization, and Concurrency Safety [COMPLETED]**
 
-**Sprint goal:** Add the explicitly separate general-image path and
-close the security/robustness gaps identified in Section 4.
+**Sprint goal:** Harden the technical diagram pipeline against duplicate rapid submissions, rate limit abuse, adversarial prompt-injection attacks, and external service timeouts. (The Gemini creative-image path is formally deferred to Future Work / Phase 2, with ScopeGuard enforcing the boundary).
 
--   **Backend:** New, isolated POST /api/images/creative route calling
-    Gemini, with its own request/response schema (never sharing a code
-    path, prompt template, or validator with the technical diagram
-    pipeline); request idempotency keys to collapse duplicate/concurrent
-    submissions of the same prompt from the same user; rate limiting per
-    user/IP; timeouts and circuit-breaking around all three external
-    calls (spaCy is local, but Voyage/Groq/Gemini are not) with clear,
-    distinct user-facing error states for each failure mode.
+-   **Backend:**
+    -   **Request Idempotency & Deduplication:** Detect concurrent or rapid duplicate submissions of the same prompt by a user/client; collapse duplicate requests into the existing active job rather than burning duplicate LLM tokens and DB rows.
+    -   **Rate Limiting:** Protect the backend API boundary with sliding-window rate limiting per user/IP (returning HTTP 429 `Too Many Requests` with `Retry-After`).
+    -   **Prompt-Injection Sanitization:** Sanitize and neutralize known prompt-injection/jailbreak patterns before prompts reach Voyage or Groq; strictly enclose user input within XML enclaves in LLM prompts so user instructions cannot alter system rules or validation ceilings.
+    -   **Service Resilience & Distinct Error Codes:** Map upstream failures (Groq timeout, Voyage rate limit, Kroki render failure) into distinct, machine-readable error codes (`GROQ_TIMEOUT`, `VOYAGE_RATE_LIMIT`, `KROKI_UNAVAILABLE`) rather than generic 500s.
+    -   **Audit Logging:** Structured security logging for rate limits, scope guard rejections, prompt injection attempts, and validation anomalies.
 
--   **Frontend:** A clearly separate UI entry point (e.g., a toggle or
-    distinct button) for \"creative image\" vs. \"technical diagram,\"
-    so users --- and the code --- never conflate the two; friendly
-    error/timeout states instead of an infinite spinner.
+-   **Frontend:**
+    -   Friendly error handling for HTTP 429 (Rate Limit) and upstream timeouts with descriptive alerts instead of infinite spinners.
+    -   Disable duplicate submission while a diagram generation job is actively in progress.
 
--   **AI/LLM work:** Basic prompt-injection defenses on all LLM-facing
-    inputs (the user prompt, and worryingly, anything extracted from an
-    uploaded attachment) --- strip/neutralize instructions embedded in
-    user content before they reach the Groq/Gemini system prompt, and
-    never let extracted \"instructions\" alter validation, complexity,
-    or security rules.
+-   **AI/LLM work:**
+    -   Basic prompt-injection defenses on user prompt inputs --- strip/neutralize instructions embedded in user content before they reach the Groq system prompt, and ensure extracted user instructions never alter validation, complexity, or security rules.
+    -   Creative image generation via Gemini is formally cataloged as Future Work.
 
--   **Database work:** API keys and secrets moved fully to
-    environment/secret-manager config (never in the repo or client
-    bundle); audit log table for security-relevant events (auth
-    failures, rejected oversized requests, repeated validation
-    failures).
+-   **Database work:**
+    -   API keys and secrets strictly verified in environment config (never in client bundle).
+    -   Audit logging persisted or logged with structured security tags for observability.
 
--   **Validation/testing:** Load-test duplicate/concurrent submission of
-    the same prompt to confirm dedupe works; test that a prompt
-    containing embedded \"ignore previous instructions\" style text does
-    not change the diagram type, complexity classification, or bypass
-    validation.
+-   **Validation/testing:**
+    -   Unit and integration tests for prompt sanitization (confirming jailbreak attempts fail to bypass validation or altering diagram types).
+    -   Tests for request deduplication/idempotency (duplicate concurrent submissions yield single pipeline execution).
+    -   Tests for rate limiting (exceeding request ceiling triggers HTTP 429 with Retry-After).
 
--   **Dependencies:** Sprint 5 (needs the full real pipeline to secure
-    and to attach the creative path alongside).
+-   **Dependencies:** Sprint 5 (needs full real pipeline and job tracker).
 
--   **Deliverables:** A working, isolated creative-image feature; a
-    hardened, rate-limited, injection-resistant technical pipeline.
+-   **Deliverables:** A hardened, rate-limited, injection-resistant technical diagram studio.
 
--   **Definition of Done:** Gemini calls never occur as part of
-    /api/diagrams/generate, and vice versa; duplicate rapid submissions
-    produce one billable pipeline run, not N.
+-   **Definition of Done:** Rapid double-clicks produce one pipeline run; rate limits return clean 429s; jailbreak prompts cannot alter diagram types or bypass validation.
 
 **Sprint 7 --- Corner-Case Hardening, Test Pass, and Demo Readiness**
 
