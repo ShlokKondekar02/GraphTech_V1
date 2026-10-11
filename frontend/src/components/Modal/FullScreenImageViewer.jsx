@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   ZoomIn, 
@@ -21,6 +21,7 @@ export function FullScreenImageViewer({ diagram, onClose }) {
 
   const [zoomLevel, setZoomLevel] = useState(() => getOptimalZoom(diagram));
   const [isCopied, setIsCopied] = useState(false);
+  const containerRef = useRef(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -39,6 +40,27 @@ export function FullScreenImageViewer({ diagram, onClose }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, diagram]);
+
+  // Intercept wheel/pinch events with passive: false to prevent entire website from zooming
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.deltaY < 0) {
+        setZoomLevel((prev) => Math.min(Number((prev + 0.2).toFixed(2)), 3.5));
+      } else {
+        setZoomLevel((prev) => Math.max(Number((prev - 0.2).toFixed(2)), 0.4));
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   if (!diagram) return null;
 
@@ -172,16 +194,9 @@ export function FullScreenImageViewer({ diagram, onClose }) {
 
       {/* Main Large Display Canvas */}
       <div 
+        ref={containerRef}
         className="fullscreen-canvas-container"
         onClick={onClose}
-        onWheel={(e) => {
-          e.preventDefault();
-          if (e.deltaY < 0) {
-            setZoomLevel((prev) => Math.min(Number((prev + 0.2).toFixed(2)), 3.5));
-          } else {
-            setZoomLevel((prev) => Math.max(Number((prev - 0.2).toFixed(2)), 0.4));
-          }
-        }}
       >
         <div 
           className="fullscreen-image-wrapper"
