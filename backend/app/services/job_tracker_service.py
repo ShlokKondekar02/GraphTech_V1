@@ -11,7 +11,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ class JobStatus:
         }
 
 
+import hashlib
+
 class JobTrackerService:
     """
     Thread-safe registry for asynchronous pipeline jobs.
@@ -66,8 +68,49 @@ class JobTrackerService:
 
     def __init__(self, ttl_seconds: int = 3600):
         self._jobs: Dict[str, JobStatus] = {}
+        self._active_prompts: Dict[str, Tuple[str, float]] = {}  # prompt_hash -> (job_id, started_at)
         self._lock = threading.Lock()
         self.ttl_seconds = ttl_seconds
+
+    @staticmethod
+    def hash_prompt(prompt: str, user_scope: Optional[str] = None) -> str:
+        """Create normalized deterministic fingerprint of user prompt."""
+        normalized = " ".join(prompt.strip().lower().split())
+        raw_key = f"{user_scope or 'global'}:{normalized}"
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    def register_active_prompt(self, prompt_hash: str, job_id: str) -> None:
+        """Associate in-flight generation job with prompt hash."""
+        with self._lock:
+            self._active_prompts[prompt_hash] = (job_id, time.time())
+
+    def find_active_job_for_prompt(
+        self,
+        prompt_hash: str,
+        max_age_seconds: int = 30,
+    ) -> Optional[JobStatus]:
+        """Check if an identical prompt is already being processed actively."""
+        with self._lock:
+            record = self._active_prompts.get(prompt_hash)
+            if not record:
+                return None
+
+            job_id, started_at = record
+            now = time.time()
+            if now - started_at > max_age_seconds:
+                self._active_prompts.pop(prompt_hash, None)
+                return None
+
+            job = self._jobs.get(job_id)
+            if not job or job.stage in ("completed", "failed"):
+                self._active_prompts.pop(prompt_hash, None)
+                return None
+
+            return job
+
+    def clear_active_prompt(self, prompt_hash: str) -> None:
+        with self._lock:
+            self._active_prompts.pop(prompt_hash, None)
 
     def create_job(self, job_id: str) -> JobStatus:
         with self._lock:
