@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     SIMILARITY_TOP_K: int = 5           # number of candidates returned
 
     # Groq LLM settings (Sprint 2)
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Groq model to use for structured JSON generation
+    GROQ_MODEL: str = "openai/gpt-oss-120b"  # Groq model to use for structured JSON generation
+    GROQ_FALLBACK_MODEL: str = "qwen/qwen3.8-27b"
+    GROQ_MAX_TOKENS: int = 2048           # Safe ceiling well below 8,000 token limit to allow complete diagrams
     GROQ_TIMEOUT_SECONDS: float = 60.0
     GROQ_MAX_RETRIES: int = 3
 
@@ -59,6 +61,13 @@ class Settings(BaseSettings):
 
     # Feature flags (Sprint 1)
     ENABLE_SPACY_PREPROCESSING: bool = False  # toggle spaCy pre-processing stage
+
+    # Security & Concurrency (Sprint 6)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DIAGRAM_PER_MINUTE: int = 15     # Max diagram generation jobs per min per client
+    RATE_LIMIT_PREPARE_PER_MINUTE: int = 30     # Max prepare/embed requests per min per client
+    DEDUPLICATION_WINDOW_SECONDS: int = 30       # Window to collapse identical in-flight submissions
+    ENABLE_PROMPT_SANITIZATION: bool = True     # Sanitize jailbreak & adversarial injections
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
