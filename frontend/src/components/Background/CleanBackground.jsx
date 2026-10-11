@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import bgImage from '../../assets/bg-clean.png';
+import bgLight from '../../assets/bg-clean.png';
+import bgDark from '../../assets/bg-dark.png';
+import { useTheme } from '../../context/ThemeContext';
 
 export function CleanBackground() {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const [offset, setOffset] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -38,14 +42,26 @@ export function CleanBackground() {
     };
   }, []);
 
+  const parallaxTransform = `translate3d(${-offset.x}px, ${-offset.y}px, 0) scale(1.04)`;
+
   return (
-    <div className="clean-background-container" aria-hidden="true">
-      {/* Pristine Clean Perspective Image with subtle responsive parallax */}
+    <div className={`clean-background-container ${isDark ? 'is-dark' : 'is-light'}`} aria-hidden="true">
+      {/* Pristine Light Perspective Image */}
       <div 
-        className="clean-background-image"
+        className="clean-background-image clean-bg-light"
         style={{
-          backgroundImage: `url(${bgImage})`,
-          transform: `translate3d(${-offset.x}px, ${-offset.y}px, 0) scale(1.04)`
+          backgroundImage: `url(${bgLight})`,
+          transform: parallaxTransform,
+          opacity: isDark ? 0 : 1
+        }}
+      />
+      {/* Cybernetic Dark Perspective Image */}
+      <div 
+        className="clean-background-image clean-bg-dark"
+        style={{
+          backgroundImage: `url(${bgDark})`,
+          transform: parallaxTransform,
+          opacity: isDark ? 1 : 0
         }}
       />
       {/* Subtle lighting wash for clean readability and contrast */}
