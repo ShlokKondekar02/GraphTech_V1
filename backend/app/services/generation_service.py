@@ -62,6 +62,8 @@ from app.services.output_validator_service import output_validator_service
 from app.services.preprocessing_service import build_preprocessor
 from app.services.rendering_service import rendering_service
 from app.services.scope_guard import scope_guard
+from app.services.audit_service import audit_service
+from app.services.sanitization_service import sanitization_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -161,6 +163,12 @@ class GenerationService:
                 scope_check.detected_domain,
                 scope_check.rejection_reason,
             )
+            audit_service.log_event(
+                event_type="SCOPE_GUARD_REJECTION",
+                detail=scope_check.rejection_reason or "Out of scope domain",
+                user_id=user_id,
+                metadata={"domain": scope_check.detected_domain, "prompt_prefix": prompt[:60]},
+            )
             result = GenerationResult(
                 request_id=request_id,
                 status="rejected_out_of_scope",
@@ -173,6 +181,18 @@ class GenerationService:
             )
             self._persist(db, result, user_id)
             return result
+
+        # ---- Stage 0.5: Prompt Sanitization & Adversarial Defenses (Sprint 6) --
+        if settings.ENABLE_PROMPT_SANITIZATION:
+            san_res = sanitization_service.sanitize(prompt)
+            if san_res.has_injection_attempt:
+                audit_service.log_event(
+                    event_type="PROMPT_INJECTION_DETECTED",
+                    detail=f"Detected adversarial patterns: {san_res.detected_patterns}",
+                    user_id=user_id,
+                    metadata={"patterns": san_res.detected_patterns, "prompt_prefix": prompt[:60]},
+                )
+            prompt = san_res.sanitized_text
 
         # ---- Stage 1: spaCy preprocessing ----------------------------------
         preprocessor = build_preprocessor()
