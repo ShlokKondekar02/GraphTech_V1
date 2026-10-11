@@ -169,6 +169,25 @@ class ValidationService:
         if orphans:
             errors.extend(orphans)
 
+        # R1.5: Handle visual boundary/container nodes
+        # If an LLM produced a boundary/container node with no edges, it represents
+        # the outer grouping frame (e.g. "System Boundary" in UML Use Case diagrams).
+        # We prune it so it does not fail the connectivity check or float as a disconnected box.
+        connected_ids = {e.source for e in model.edges} | {e.target for e in model.edges}
+        isolated_boundaries = [
+            n for n in model.nodes
+            if self._is_boundary_container_node(n) and n.id not in connected_ids
+        ]
+        if isolated_boundaries and len(model.nodes) > len(isolated_boundaries):
+            for b in isolated_boundaries:
+                logger.info(
+                    "Pruning isolated visual boundary node '%s' ('%s') from graph AST",
+                    b.id,
+                    b.label,
+                )
+            model.nodes = [n for n in model.nodes if n not in isolated_boundaries]
+            node_ids = {n.id for n in model.nodes}
+
         # R2: Connectivity check
         if model.diagram_type not in DISCONNECTED_ALLOWED_TYPES:
             isolated = self._find_isolated_nodes(model)
@@ -238,6 +257,20 @@ class ValidationService:
             connected.add(edge.target)
 
         return [n.id for n in model.nodes if n.id not in connected]
+
+    @staticmethod
+    def _is_boundary_container_node(node: Any) -> bool:
+        """Identify if a node represents a visual boundary or system frame rather than an active graph entity."""
+        nid = getattr(node, "id", "").lower()
+        ntype = (getattr(node, "type", "") or "").lower()
+        nlabel = (getattr(node, "label", "") or "").lower()
+        return (
+            nid in ("system_boundary", "boundary", "container", "system_box", "system_boundary_box")
+            or "boundary" in nid
+            or ntype in ("boundary", "container", "system_boundary")
+            or "system boundary" in nlabel
+            or "system_boundary" in nlabel
+        )
 
 
 # Module-level singleton
