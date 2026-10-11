@@ -29,17 +29,25 @@ export function DiagramViewer({
   onResetZoom,
   hideToolbar = false
 }) {
+  const getOptimalZoom = (diag) => {
+    if (!diag) return 1.25;
+    const count = diag.nodesCount || diag.structured_json?.nodes?.length || 0;
+    if (count > 0 && count <= 3) return 1.6;
+    if (count > 3 && count <= 6) return 1.35;
+    return 1.15;
+  };
+
   const [internalViewMode, setInternalViewMode] = useState('preview'); // 'preview' | 'code'
-  const [internalZoomLevel, setInternalZoomLevel] = useState(1);
+  const [internalZoomLevel, setInternalZoomLevel] = useState(() => getOptimalZoom(diagram));
   const [isCopied, setIsCopied] = useState(false);
 
   const viewMode = controlledViewMode !== undefined ? controlledViewMode : internalViewMode;
   const setViewMode = onViewModeChange || setInternalViewMode;
 
   const zoomLevel = controlledZoomLevel !== undefined ? controlledZoomLevel : internalZoomLevel;
-  const handleZoomIn = onZoomIn || (() => setInternalZoomLevel((prev) => Math.min(prev + 0.15, 2.5)));
-  const handleZoomOut = onZoomOut || (() => setInternalZoomLevel((prev) => Math.max(prev - 0.15, 0.4)));
-  const handleResetZoom = onResetZoom || (() => setInternalZoomLevel(1));
+  const handleZoomIn = onZoomIn || (() => setInternalZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5)));
+  const handleZoomOut = onZoomOut || (() => setInternalZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4)));
+  const handleResetZoom = onResetZoom || (() => setInternalZoomLevel(getOptimalZoom(diagram)));
 
   const handleCopyCode = () => {
     if (diagram?.dslCode) {
@@ -183,7 +191,22 @@ export function DiagramViewer({
       )}
 
       {/* Main Diagram Area */}
-      <div className="diagram-canvas-area">
+      <div 
+        className="diagram-canvas-area"
+        onWheel={(e) => {
+          if (viewMode === 'preview') {
+            // Zoom with wheel or pinch
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              if (e.deltaY < 0) {
+                handleZoomIn();
+              } else {
+                handleZoomOut();
+              }
+            }
+          }
+        }}
+      >
         {viewMode === 'preview' ? (
           <div 
             className="svg-render-wrapper"
@@ -194,7 +217,7 @@ export function DiagramViewer({
               cursor: 'zoom-in'
             }}
             onClick={() => onOpenFullscreen && onOpenFullscreen(diagram)}
-            title="Click to view full screen"
+            title="Click to view full screen (seen or read)"
             dangerouslySetInnerHTML={{ __html: diagram.svgContent }}
           />
         ) : (
