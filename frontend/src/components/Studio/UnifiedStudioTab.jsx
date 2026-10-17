@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChatPanel } from '../Chat/ChatPanel';
 import { DiagramPanel } from '../Diagram/DiagramPanel';
 import { 
@@ -37,13 +37,32 @@ export function UnifiedStudioTab({
   const [viewLayout, setViewLayout] = useState('split');
   const [isSpecOpen, setIsSpecOpen] = useState(true);
 
-  // Diagram View Controls (Single unified control surface, no duplicates)
+  // Diagram View Controls: Adaptive auto-zoom for clear readability
   const [viewMode, setViewMode] = useState('preview'); // 'preview' | 'code'
-  const [zoomLevel, setZoomLevel] = useState(1);
 
-  const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.15, 2.5));
-  const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.15, 0.4));
-  const handleResetZoom = () => setZoomLevel(1);
+  const getOptimalZoom = (diag) => {
+    if (!diag) return 1.25;
+    const count = diag.nodesCount || diag.structured_json?.nodes?.length || 0;
+    if (count > 0 && count <= 3) return 1.6; // Small diagrams (2-3 nodes) start at 160% zoom for immediate clarity
+    if (count > 3 && count <= 6) return 1.35;
+    return 1.15;
+  };
+
+  const [zoomLevel, setZoomLevel] = useState(() => getOptimalZoom(diagram));
+
+  // Automatically update zoom when a new diagram is loaded or generated
+  useEffect(() => {
+    if (diagram) {
+      setZoomLevel(getOptimalZoom(diagram));
+    }
+  }, [diagram?.id, diagram?.svgContent]);
+
+  const handleZoomIn = () => setZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5));
+  const handleZoomOut = () => setZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4));
+  const handleResetZoom = () => {
+    const optimal = getOptimalZoom(diagram);
+    setZoomLevel((prev) => (Math.abs(prev - optimal) < 0.05 ? 1 : optimal));
+  };
 
   // Resizable Sections: Chat width state and mouse drag handlers
   const [chatWidth, setChatWidth] = useState(420);

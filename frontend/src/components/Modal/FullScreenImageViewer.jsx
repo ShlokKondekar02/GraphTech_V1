@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   ZoomIn, 
@@ -11,8 +11,17 @@ import {
 } from 'lucide-react';
 
 export function FullScreenImageViewer({ diagram, onClose }) {
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const getOptimalZoom = (diag) => {
+    if (!diag) return 1.25;
+    const count = diag.nodesCount || diag.structured_json?.nodes?.length || 0;
+    if (count > 0 && count <= 3) return 1.6;
+    if (count > 3 && count <= 6) return 1.35;
+    return 1.15;
+  };
+
+  const [zoomLevel, setZoomLevel] = useState(() => getOptimalZoom(diagram));
   const [isCopied, setIsCopied] = useState(false);
+  const containerRef = useRef(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -20,33 +29,55 @@ export function FullScreenImageViewer({ diagram, onClose }) {
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === '+' || e.key === '=') {
-        setZoomLevel((prev) => Math.min(prev + 0.2, 3));
+        setZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5));
       } else if (e.key === '-') {
-        setZoomLevel((prev) => Math.max(prev - 0.2, 0.4));
+        setZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4));
       } else if (e.key === '0') {
-        setZoomLevel(1);
+        setZoomLevel(getOptimalZoom(diagram));
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, diagram]);
+
+  // Intercept wheel/pinch events with passive: false to prevent entire website from zooming
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.deltaY < 0) {
+        setZoomLevel((prev) => Math.min(Number((prev + 0.2).toFixed(2)), 3.5));
+      } else {
+        setZoomLevel((prev) => Math.max(Number((prev - 0.2).toFixed(2)), 0.4));
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   if (!diagram) return null;
 
   const handleZoomIn = (e) => {
     e.stopPropagation();
-    setZoomLevel((prev) => Math.min(prev + 0.2, 3));
+    setZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5));
   };
 
   const handleZoomOut = (e) => {
     e.stopPropagation();
-    setZoomLevel((prev) => Math.max(prev - 0.2, 0.4));
+    setZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4));
   };
 
   const handleResetZoom = (e) => {
     e.stopPropagation();
-    setZoomLevel(1);
+    const optimal = getOptimalZoom(diagram);
+    setZoomLevel((prev) => (Math.abs(prev - optimal) < 0.05 ? 1 : optimal));
   };
 
   const handleDownload = (e) => {
@@ -163,6 +194,7 @@ export function FullScreenImageViewer({ diagram, onClose }) {
 
       {/* Main Large Display Canvas */}
       <div 
+        ref={containerRef}
         className="fullscreen-canvas-container"
         onClick={onClose}
       >

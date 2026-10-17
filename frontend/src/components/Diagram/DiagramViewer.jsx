@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Download, 
   RotateCw, 
@@ -29,17 +29,54 @@ export function DiagramViewer({
   onResetZoom,
   hideToolbar = false
 }) {
+  const getOptimalZoom = (diag) => {
+    if (!diag) return 1.25;
+    const count = diag.nodesCount || diag.structured_json?.nodes?.length || 0;
+    if (count > 0 && count <= 3) return 1.6;
+    if (count > 3 && count <= 6) return 1.35;
+    return 1.15;
+  };
+
   const [internalViewMode, setInternalViewMode] = useState('preview'); // 'preview' | 'code'
-  const [internalZoomLevel, setInternalZoomLevel] = useState(1);
+  const [internalZoomLevel, setInternalZoomLevel] = useState(() => getOptimalZoom(diagram));
   const [isCopied, setIsCopied] = useState(false);
 
   const viewMode = controlledViewMode !== undefined ? controlledViewMode : internalViewMode;
   const setViewMode = onViewModeChange || setInternalViewMode;
 
   const zoomLevel = controlledZoomLevel !== undefined ? controlledZoomLevel : internalZoomLevel;
-  const handleZoomIn = onZoomIn || (() => setInternalZoomLevel((prev) => Math.min(prev + 0.15, 2.5)));
-  const handleZoomOut = onZoomOut || (() => setInternalZoomLevel((prev) => Math.max(prev - 0.15, 0.4)));
-  const handleResetZoom = onResetZoom || (() => setInternalZoomLevel(1));
+  const handleZoomIn = onZoomIn || (() => setInternalZoomLevel((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.5)));
+  const handleZoomOut = onZoomOut || (() => setInternalZoomLevel((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.4)));
+  const handleResetZoom = onResetZoom || (() => setInternalZoomLevel(getOptimalZoom(diagram)));
+
+  const canvasRef = useRef(null);
+  const zoomInRef = useRef(handleZoomIn);
+  const zoomOutRef = useRef(handleZoomOut);
+  zoomInRef.current = handleZoomIn;
+  zoomOutRef.current = handleZoomOut;
+
+  // Intercept wheel/trackpad pinch events with passive: false to prevent entire website from zooming
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.deltaY < 0) {
+          zoomInRef.current();
+        } else {
+          zoomOutRef.current();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   const handleCopyCode = () => {
     if (diagram?.dslCode) {
@@ -183,7 +220,10 @@ export function DiagramViewer({
       )}
 
       {/* Main Diagram Area */}
-      <div className="diagram-canvas-area">
+      <div 
+        ref={canvasRef}
+        className="diagram-canvas-area"
+      >
         {viewMode === 'preview' ? (
           <div 
             className="svg-render-wrapper"
@@ -194,7 +234,7 @@ export function DiagramViewer({
               cursor: 'zoom-in'
             }}
             onClick={() => onOpenFullscreen && onOpenFullscreen(diagram)}
-            title="Click to view full screen"
+            title="Click to view full screen (seen or read)"
             dangerouslySetInnerHTML={{ __html: diagram.svgContent }}
           />
         ) : (

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Network, PanelLeft } from 'lucide-react';
+import { Network, PanelLeft, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 export function Navbar({ 
   onToggleSidebar, 
@@ -11,6 +12,8 @@ export function Navbar({
   onLogout,
   onGoDiscover
 }) {
+  const { resolvedTheme, toggleTheme } = useTheme();
+
   return (
     <header className="navbar">
       <div className="navbar-left-group">
@@ -44,6 +47,21 @@ export function Navbar({
       </div>
 
       <div className="navbar-actions">
+        {/* Theme Toggle Button */}
+        <button
+          type="button"
+          className="navbar-btn-theme"
+          onClick={toggleTheme}
+          aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {resolvedTheme === 'dark' ? (
+            <Sun size={16} className="theme-toggle-icon theme-icon-sun" />
+          ) : (
+            <Moon size={16} className="theme-toggle-icon theme-icon-moon" />
+          )}
+        </button>
+
         {/* Auth Buttons or User Profile */}
         {!isLoggedIn ? (
           <div className="nav-auth-group">
@@ -84,3 +102,4 @@ export function Navbar({
 }
 
 export default Navbar;
+
